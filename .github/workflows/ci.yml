@@ -46,7 +46,7 @@ jobs:
           cache: npm
 
       - name: Set up Java (Firestore emulator runtime)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -55,4 +55,18 @@ jobs:
         run: npm ci
 
       - name: Firestore security rules tests
-        run: npm run test:rules
+        shell: bash
+        run: |
+          set +e
+          npm run test:rules 2>&1 | tee /tmp/rules.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # The runner log is not always retrievable from every client, so
+            # surface the first failures as check annotations too.
+            grep -E "^(not ok|  FAIL|Error|.*AssertionError|.*expected)" /tmp/rules.log \
+              | head -10 \
+              | while IFS= read -r line; do
+                  echo "::error::${line:0:900}"
+                done
+            exit "$status"
+          fi

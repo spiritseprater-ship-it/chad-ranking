@@ -63,8 +63,8 @@ jobs:
           if [ "$status" -ne 0 ]; then
             # The runner log is not always retrievable from every client, so
             # surface the first failures as check annotations too.
-            awk '/Running script/{flag=1} flag' /tmp/rules.log \
-              | sed -e 's/\x1b\[[0-9;]*m//g' \
+            sed -e 's/\x1b\[[0-9;]*m//g' /tmp/rules.log \
+              | grep -m 1 -A 14 "not ok 1" \
               | head -n 14 \
               | while IFS= read -r line; do
                   [ -n "$line" ] && echo "::error::${line:0:900}"

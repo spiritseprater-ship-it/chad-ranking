@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F7F7F4" />
+    <meta
+      name="description"
+      content="CHAD RANKING — a weekly community competition. Enter, compete and claim your rank. Scores are for entertainment only."
+    />
+    <title>CHAD RANKING — The ranking is yours to claim.</title>
+
+    <!--
+      GitHub Pages SPA fallback.
+      `public/404.html` stores the requested deep link and redirects to the
+      site root; this script restores the original path before React mounts.
+      Vite replaces %BASE_URL% with the configured repository base path.
+    -->
+    <script>
+      ;(function () {
+        try {
+          var base = '%BASE_URL%'
+          var deep = sessionStorage.getItem('chad:spa-redirect')
+          if (!deep) return
+          sessionStorage.removeItem('chad:spa-redirect')
+          window.history.replaceState(
+            null,
+            '',
+            deep.indexOf(base) === 0 ? deep : base,
+          )
+        } catch (e) {
+          /* storage can be unavailable in strict privacy modes */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 2rem; font-family: sans-serif">
+        CHAD RANKING needs JavaScript enabled to run.
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

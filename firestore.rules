@@ -1,0 +1,169 @@
+rules_version = '2';
+
+// ===========================================================================
+// CHAD RANKING — DRAFT Firestore rules (Phase 1 planning artefact)
+//
+// NOT DEPLOYED AND NOT TESTED AGAINST A LIVE PROJECT.
+//
+// These rules assume the Phase 2 "trusted backend" architecture in
+// docs/FIREBASE_PLAN.md: score confirmation, ranking, moderation and the weekly
+// reset are performed by a trusted server (Cloud Functions on Blaze OR a free
+// external serverless backend holding a service account). The Admin SDK
+// bypasses these rules; regular clients cannot write protected collections.
+//
+// If the project instead chooses a rules-only admin model, these rules must be
+// redesigned and thoroughly tested in the Firebase Emulator Suite before any
+// real user data exists. Never ship test-mode rules.
+// ===========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isActiveUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).accountStatus == 'active';
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).role == 'admin'
+        && userDoc(request.auth.uid).accountStatus == 'active';
+    }
+
+    function hasOnlyFields(allowed) {
+      return request.resource.data.keys().hasOnly(allowed);
+    }
+
+    // -----------------------------------------------------------------------
+    // users — public profile fields ONLY. Never store email, tokens, passwords
+    // or moderation notes here. Public read is intentional.
+    // -----------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && hasOnlyFields([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.role == 'member'
+        && request.resource.data.accountStatus == 'active';
+
+      // A member may only change their profile picture reference. Username,
+      // role, account status and creation time are immutable from the client.
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && hasOnlyFields([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.usernameLowercase == resource.data.usernameLowercase
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.accountStatus == resource.data.accountStatus
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // usernames — case-insensitive reservation. The document ID is the
+    // lowercased username, so uniqueness is enforced by Firestore itself.
+    // Creation must happen in the same transaction as the user document.
+    // -----------------------------------------------------------------------
+    match /usernames/{usernameLower} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.usernameLowercase == usernameLower;
+      allow update, delete: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // competitions / meta — written only by the trusted scheduler or backend.
+    // -----------------------------------------------------------------------
+    match /competitions/{competitionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /meta/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // submissions — confirmed entries only, created by the trusted backend
+    // after competition, eligibility and score validation. Clients never write.
+    // -----------------------------------------------------------------------
+    match /submissions/{submissionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // showcases — public while active; eligible users submit through the
+    // backend, which enforces the Top 10 and the weekly lock.
+    // -----------------------------------------------------------------------
+    match /showcases/{showcaseId} {
+      allow read: if resource.data.status == 'locked';
+      allow write: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // reports — private queue. A signed-in user may create one report with a
+    // strict shape; only administrators may read or change status.
+    // Rate limiting / duplicate protection is enforced by the backend.
+    // -----------------------------------------------------------------------
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.reportedUid != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.category in [
+          'impersonation', 'fake-profile', 'inappropriate-image',
+          'offensive-content', 'spam'
+        ]
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'reportedUid', 'category', 'status', 'createdAt'
+        ]);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // -----------------------------------------------------------------------
+    // adminAudit — minimal trusted trail. Readable by admins, written only by
+    // the backend so it cannot be forged or erased from a browser.
+    // -----------------------------------------------------------------------
+    match /adminAudit/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // -----------------------------------------------------------------------
+    // adminStatus — optional private support metadata (e.g. account flags).
+    // Kept separate from public user documents.
+    // -----------------------------------------------------------------------
+    match /adminStatus/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow write: if false;
+    }
+
+    // Default deny: no collection is public read/write merely by existing.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

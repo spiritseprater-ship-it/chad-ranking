@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// ===========================================================================
+// CHAD RANKING — DRAFT Storage rules (Phase 1 planning artefact)
+//
+// NOT DEPLOYED. NOT TESTED.
+//
+// IMPORTANT (verified October 2026): Cloud Storage for Firebase requires the
+// Blaze (billing) plan since 3 February 2026. A strictly ₹0 Spark project
+// cannot use it. If Storage is enabled later, these rules are a starting point:
+//   - permanent images only (profile pictures, eligible showcase photos)
+//   - raw scoring photos are never uploaded
+//   - showcase uploads go through a trusted backend after eligibility checks
+// ===========================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUnder(megabytes) {
+      return request.resource.size <= megabytes * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    // Permanent profile pictures: owner-only writes, path pinned to the UID.
+    // Reads are public because the picture is a public profile field.
+    match /profilePhotos/{uid}/{fileName} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && isImageUnder(1);
+    }
+
+    // Showcase photographs: a trusted backend validates eligibility, locks the
+    // submission and deletes the file when the participant leaves the Top 10
+    // or the week resets. Clients never write this path directly.
+    match /showcasePhotos/{competitionId}/{uid}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Reject everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

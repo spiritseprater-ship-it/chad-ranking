@@ -10,6 +10,8 @@
     "typecheck": "tsc -b --pretty false",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
+    "emulators": "firebase emulators:start --only firestore",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-chad-ranking \"node --test tests/rules\"",
     "ci": "npm run build && npm run smoke"
   },
   "dependencies": {
@@ -25,11 +27,13 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.18.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "firebase-tools": "^15.34.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^8.3.5"

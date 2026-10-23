@@ -1,5 +1,13 @@
 # Phase 2 — Firebase & trusted backend plan
 
+> **Status update (October 2026):** the architecture is decided and approved —
+> **Spark + Cloudflare Workers Free**, no Blaze, no Functions, no Storage.
+> Step 1 (rules, schema, indexes, emulator tests) is implemented; see
+> [`PHASE2_SCHEMA.md`](PHASE2_SCHEMA.md) for the authoritative schema and trust
+> boundary. Sections below that describe choosing between Blaze and a free
+> backend are retained as background; where they conflict with
+> `PHASE2_SCHEMA.md`, the schema document wins.
+
 Status: **planning document**. Nothing described here is deployed. The Phase 1
 service layer is deliberately shaped so these implementations replace the demo
 ones without changing the pages.
@@ -28,44 +36,22 @@ architecture.
 
 ---
 
-## 2. Decision required before implementation
+## 2. Approved decision (October 2026)
 
-Firebase quotas verified in October 2026 mean the original “Spark only” plan
-cannot include Cloud Functions or Cloud Storage. A trusted confirmation and
-cleanup layer must exist somewhere. Choose one:
+- **Plan:** Firebase **Spark** only. No billing account, no payment method, no
+  Cloud Functions, no Firebase Cloud Storage.
+- **Trusted backend:** a **Cloudflare Worker on the free plan** (100,000
+  requests/day, 10 ms CPU per request, 5 cron triggers) holding a
+  Firestore-scoped service account. The key lives only in Cloudflare.
+- **Images:** compressed WebP stored as bounded Firestore documents.
+- **Reset:** competition IDs derived from Monday 00:00 IST; a Worker cron performs
+  cleanup. No client may request or delay a reset.
+- **Rejected:** rules-only browser confirmation (clients would choose scores),
+  Blaze/Functions/Storage, R2 (payment method), Deno Deploy (shutdown announced),
+  Supabase.
 
-### Option A — Blaze with free-quota discipline (recommended for simplicity)
-
-- Firebase Auth + Firestore + **Cloud Functions** + **Storage** on Blaze.
-- A card is required. Stay inside the always-free quotas and add budget alerts;
-  a small school community normally incurs no charge.
-- Functions perform callback validation, image re-analysis, moderation, admin
-  actions and cleanup. Storage holds compressed permanent images; scoring photos
-  are transient and deleted immediately.
-- Cannot proceed without the owner's explicit approval to enable billing.
-
-### Option B — strictly ₹0 with an external trusted backend
-
-- Spark for Auth + Firestore. No Storage, no Functions.
-- A free serverless/Node backend (for example a small Vercel/Netlify/Cloudflare
-  Worker deployment) holds a Firebase service-account secret and exposes HTTPS
-  endpoints for confirmation, admin actions, moderation and reset.
-- Profile/showcase images: compressed, re-encoded images stored as bounded
-  Firestore data (1 MiB document cap) and deleted on reset/ineligibility; or
-  another explicitly approved free media store.
-- Weekly reset: provider cron **or** a free GitHub Actions scheduled workflow
-  calling an idempotent endpoint with a short-lived credential.
-- Harder to maintain and still requires server-side image decoding for genuine
-  score verification. Treat “free” as quota-limited, not unlimited.
-
-### Option C — rules-only confirmation
-
-Rejected. Firestore rules cannot recompute an image score or derive ranking in a
-trustworthy way; allowing clients to write the score defeats the specification.
-
-**Phase 2 must not start until Option A or B is chosen in writing.**
-
----
+The implemented collection schema, ID formats, rules invariants and test
+coverage are specified in [`PHASE2_SCHEMA.md`](PHASE2_SCHEMA.md).
 
 ## 3. Authentication
 

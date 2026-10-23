@@ -29,3 +29,30 @@ jobs:
 
       - name: Service and render smoke checks
         run: npm run smoke
+
+  # Phase 2 guard-rail: every privileged Firestore write must be denied.
+  # Uses the Firebase Emulator Suite only — no project, no credentials, no
+  # billing account, so it is safe to run on pull requests from forks.
+  firestore-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java (Firestore emulator runtime)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Firestore security rules tests
+        run: npm run test:rules

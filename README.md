@@ -41,7 +41,11 @@ Nothing in this repository claims that they are.
 | Trusted server-side score confirmation and rank calculation | ⛔ Phase 2 |
 | Scheduled weekly reset | ⛔ Phase 2 |
 | Deployed GitHub Pages site | ⚠️ Workflow included; Pages must be enabled by the owner |
-| Firestore / Storage Security Rules | ⚠️ Drafts included, **not deployed or tested** |
+
+Phase 2, step 1 (rules, schema, indexes, emulator tests) is complete. The Worker,
+authentication wiring and all live data remain **not implemented**; the site
+still runs on the labelled demo layer.
+| Firestore Security Rules | ✅ Implemented and emulator-tested in CI; **not deployed** |
 
 ### Demo mode (for reviewing the UI)
 
@@ -180,10 +184,17 @@ src/
   utils/           cn, datetime (IST), ranking, validation
 public/            favicon, SPA 404 fallback, robots.txt, .nojekyll
 scripts/           smoke checks
-docs/              Phase 2 plan, free-tier notes, scoring, testing
-firestore.rules    DRAFT rules (not deployed)
-storage.rules      DRAFT rules (not deployed)
+tests/rules/       Firestore security-rules tests (emulator)
+docs/              Phase 2 plan, schema, free-tier notes, scoring, testing
+firebase.json      Firestore only (no Storage, no Functions)
+.firebaserc        default project: zaid-a5d0e
+firestore.rules    implemented, emulator-tested in CI, not deployed
+firestore.indexes.json
 ```
+
+There is deliberately **no** `storage.rules` and no `functions/` directory:
+Cloud Storage and Cloud Functions both require Blaze, which this project does
+not use.
 
 UI components do not import the demo store; pages talk only to the service
 interfaces in `src/types/services.ts`. Phase 2 replaces the implementations, not
@@ -228,47 +239,44 @@ action.
 
 ---
 
-## 7. Phase 2 — backend decisions before writing code
+## 7. Phase 2 — approved backend architecture
 
-Read [`docs/FIREBASE_PLAN.md`](docs/FIREBASE_PLAN.md) in full. The short version:
+Decisions approved in October 2026 (see
+[`docs/PHASE2_SCHEMA.md`](docs/PHASE2_SCHEMA.md) for the implemented schema):
 
-- Authentication: Firebase Email/Password. Login accepts username or email in the
-  UI; the final username-resolution approach is an open decision (see below).
-- Data: Firestore with public profile fields, submissions, showcases, reports,
-  audit, competitions. No email addresses in public documents.
-- **Score confirmation, rank calculation, showcase eligibility, admin actions
-  and weekly reset must run in a trusted environment.** Browser values are never
-  trusted.
-- Current free-tier facts (verified 23 October 2026) create a real architectural
-  choice:
-  - **Cloud Functions and Cloud Storage are not available on the Spark plan.**
-    Cloud Storage has required Blaze since 3 February 2026; Functions requires
-    Blaze to deploy. Firestore and Email/Password Auth remain free within quotas.
-  - **Option A — Blaze, stay inside free quotas:** Cloud Functions + Storage,
-    card on file, budget alerts, explicit owner approval. Simplest and fully
-    aligned with this specification.
-  - **Option B — strictly ₹0:** Spark Auth + Firestore, with a free external
-    serverless backend holding a service account for trusted confirmations,
-    moderation and reset; images stored as compressed Firestore data (or another
-    explicitly approved free store).
-  - **Option C — rules-only browser confirmation:** rejected. It allows clients
-    to choose scores and cannot satisfy the security requirements.
+- **Plan:** Firebase **Spark** only. No Blaze, no billing account, no payment
+  card, no Cloud Functions, no Firebase Cloud Storage.
+- **Identity:** email + password, with a unique public username. Email lives in
+  Firebase Authentication, never in Firestore.
+- **Trusted backend:** a **Cloudflare Worker (free plan)** holds a
+  Firestore-scoped service account and performs every privileged write:
+  score confirmation, rank derivation, showcase locking, admin actions and
+  cleanup. No key is in this repository or the frontend.
+- **Scoring:** the browser sends three 96×96 pixel buffers; the Worker recomputes
+  the official score with the same deterministic formula. This proves the client
+  did not choose the number, **not** that the photos were captured live.
+- **Images:** compressed WebP/JPEG stored as bounded Firestore documents
+  (≤ 48 KiB avatars, ≤ 150 KiB showcase photos), because Storage is unavailable
+  on Spark.
+- **Weekly reset:** the competition ID is derived from Monday 00:00 IST, so a new
+  week starts without a privileged request. A Worker cron deletes the previous
+  week's data and expires audit/report records.
+- **App Check:** monitoring mode only until the enforcement plan is tested.
 
-Do not enable billing, deploy rules, or call the backend “secure” until the owner
-chooses an option and the behaviour has been tested in the Firebase Emulator
-Suite. `firestore.rules` and `storage.rules` are **drafts**.
+### What step 1 delivered
 
-### Username sign-in decision
+`firestore.rules`, `firestore.indexes.json` and
+`tests/rules/firestore.rules.test.mjs` implement and prove the trust boundary:
+clients may only create their profile/username, update their own
+`profileImagePath`, upload a bounded avatar and file one report. Every write to
+submissions, showcases, competitions, audit and rate limits is denied. The suite
+runs on every pull request via `.github/workflows/ci.yml`.
 
-Firebase Email/Password requires an email credential. A strictly free,
-server-verified username-only sign-in is not possible without either a trusted
-function/back end or a synthetic-email design with owner-assisted recovery:
+### Sign-in identifier (decided)
 
-- **Recommended for Spark:** sign in with email + password; the public identity
-  remains the unique username. The Phase 1 form already accepts either.
-- **If username-only login is required:** Option A with a callable resolution
-  function, or a documented synthetic-email scheme with an explicit recovery
-  process. Choose this before Phase 2 authentication is implemented.
+Sign-in uses **email + password**; the public identity is the unique username.
+Username-only sign-in would require a trusted password proxy or a synthetic-email
+scheme that breaks self-service recovery, so it is not used.
 
 ### First administrator
 
@@ -292,9 +300,12 @@ Performed through a trusted process, never through the UI:
   prolonged repository inactivity; therefore expiry is *also* enforced from
   timestamps at submission time. A late reset never allows entries into the old
   week.
-- Option A alternative: a scheduled Cloud Function (Blaze).
+- Approved scheduler: **Cloudflare Cron Triggers** on the Worker (free plan).
+  The week boundary itself never depends on the cron: competition IDs are derived
+  from the clock, so a late or disabled job can delay cleanup but can never allow
+  an entry into the previous week.
 - Cleanup: previous showcases are hidden immediately when eligibility ends and
-  their stored files/records are deleted by the trusted cleanup job. No archive.
+  their records/images are deleted by the trusted cleanup job. No archive.
 
 ---
 
@@ -307,9 +318,9 @@ Performed through a trusted process, never through the UI:
 - The Phase 1 demo stores its session in `sessionStorage` under an explicitly
   demo-only key. Production authentication will use Firebase sessions; neither
   uses `localStorage` as an authority for accounts or ranks.
-- Firestore/Storage rules must prevent self-granted roles, self-set scores,
-  cross-account edits, showcase uploads while ineligible, and reads of private
-  moderation data. Drafts are included; **test them before real data exists.**
+- `firestore.rules` denies self-granted roles, self-set scores, cross-account
+  edits, showcase writes and reads of private moderation data. It is covered by
+  emulator tests in CI, but **has not been deployed** to the live project.
 - Raw scoring photos are never uploaded, and clearing browser memory is described
   honestly in the Privacy page — it is not a guarantee of erasing every
   device-level trace.

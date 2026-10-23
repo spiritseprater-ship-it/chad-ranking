@@ -95,6 +95,11 @@ service cloud.firestore {
         && request.resource.data.uid == uid
         && validUsername(request.resource.data.username)
         && request.resource.data.usernameLowercase == request.resource.data.username.lower()
+        // The reservation must be created in the same commit, so a profile can
+        // never claim a username that belongs to someone else.
+        && getAfter(
+             /databases/$(database)/documents/usernames/$(request.resource.data.usernameLowercase)
+           ).data.uid == uid
         && request.resource.data.role == 'member'
         && request.resource.data.accountStatus == 'active'
         && request.resource.data.createdAt == request.time

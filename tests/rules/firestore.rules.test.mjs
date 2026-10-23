@@ -33,6 +33,7 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -114,11 +115,51 @@ describe('users', () => {
     assert.equal(snapshot.data().username, 'Rohan')
   })
 
-  it('lets the owner create their profile', async () => {
+  it('creates the profile and its username reservation atomically', async () => {
     const db = asUser('member1')
-    await assertSucceeds(
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'usernames/rohan'), {
+      uid: 'member1',
+      usernameLowercase: 'rohan',
+      createdAt: serverTimestamp(),
+    })
+    batch.set(doc(db, 'users/member1'), {
+      uid: 'member1',
+      username: 'Rohan',
+      usernameLowercase: 'rohan',
+      profileImagePath: null,
+      createdAt: serverTimestamp(),
+      role: 'member',
+      accountStatus: 'active',
+    })
+    await assertSucceeds(batch.commit())
+  })
+
+  it('rejects a profile whose reservation is missing from the commit', async () => {
+    const db = asUser('member1')
+    await assertFails(
       setDoc(doc(db, 'users/member1'), {
         uid: 'member1',
+        username: 'Rohan',
+        usernameLowercase: 'rohan',
+        profileImagePath: null,
+        createdAt: serverTimestamp(),
+        role: 'member',
+        accountStatus: 'active',
+      }),
+    )
+  })
+
+  it("rejects claiming a username reserved by someone else", async () => {
+    await seedDoc('usernames/rohan', {
+      uid: 'member1',
+      usernameLowercase: 'rohan',
+      createdAt: Timestamp.now(),
+    })
+    const db = asUser('member2')
+    await assertFails(
+      setDoc(doc(db, 'users/member2'), {
+        uid: 'member2',
         username: 'Rohan',
         usernameLowercase: 'rohan',
         profileImagePath: null,

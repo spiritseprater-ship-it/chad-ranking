@@ -56,7 +56,9 @@ the rules and asserted in `tests/rules/firestore.rules.test.mjs`.
 | `role` | `'member' \| 'admin'` | **immutable from the client** |
 | `accountStatus` | `'active' \| 'suspended'` | **immutable from the client** |
 
-- Read: public. Create: owner only, `role` forced to `member`.
+- Read: public. Create: owner only, `role` forced to `member`, and the commit
+  **must also create** `usernames/{usernameLowercase}` for the same uid
+  (`getAfter` check), so a profile cannot claim someone else's reservation.
 - Update: owner may change **only** `profileImagePath`.
 - Delete: denied (account deletion runs through the Worker).
 - Email addresses live in Firebase Authentication, never in this document.

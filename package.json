@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
     "emulators": "firebase emulators:start --only firestore",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-chad-ranking \"node --test tests/rules\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-chad-ranking \"node --test tests/rules/firestore.rules.test.mjs\"",
     "ci": "npm run build && npm run smoke"
   },
   "dependencies": {

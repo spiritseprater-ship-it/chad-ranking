@@ -71,3 +71,5 @@ jobs:
                 done
             exit "$status"
           fi
+          summary=$(grep -E "^# (tests|pass|fail|skipped|todo)" /tmp/rules.log | tr '\n' ' ')
+          echo "::notice::Firestore rules — ${summary:-all checks passed}"

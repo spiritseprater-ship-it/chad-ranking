@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# No private data is rendered on public pages; admin routes are auth-gated.
+Disallow: /admin

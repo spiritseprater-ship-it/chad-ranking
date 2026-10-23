@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   CHAD RANKING — design tokens
+   Light, editorial, premium. Gold is reserved for achievement.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Manrope Variable', 'Inter Variable', ui-sans-serif, sans-serif;
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+
+  --color-canvas: #f7f7f4;
+  --color-surface: #ffffff;
+  --color-subtle: #f0f1ed;
+  --color-ink: #20231f;
+  --color-muted: #686d66;
+  --color-line: #e4e6e0;
+
+  --color-forest: #304b3b;
+  --color-forest-700: #263c2f;
+  --color-forest-900: #1a2920;
+  --color-forest-tint: #edf1ec;
+
+  --color-gold: #b49a62;
+  --color-gold-deep: #7e6330;
+  --color-gold-tint: #f6f0e4;
+
+  --color-success: #39734f;
+  --color-warning: #8e611f;
+  --color-danger: #b94343;
+  --color-danger-tint: #fbf0ee;
+
+  --radius-card: 0.875rem;
+  --radius-field: 0.625rem;
+
+  --shadow-soft: 0 1px 2px rgb(32 35 31 / 0.04), 0 8px 24px -18px rgb(32 35 31 / 0.25);
+  --shadow-lift: 0 2px 4px rgb(32 35 31 / 0.04), 0 18px 40px -28px rgb(32 35 31 / 0.35);
+
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.35s ease-out both;
+  --animate-pop: pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  --text-eyebrow: 0.6875rem;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: var(--color-forest);
+    color: var(--color-canvas);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-forest);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  img {
+    @apply max-w-full;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 78rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+
+  @media (min-width: 640px) {
+    padding-inline: 2rem;
+  }
+  @media (min-width: 1024px) {
+    padding-inline: 2.5rem;
+  }
+}
+
+@utility eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--text-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+@utility hairline {
+  border-top: 1px solid var(--color-line);
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+/* Fine, restrained paper texture used only on large editorial panels. */
+@utility paper-texture {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgb(32 35 31 / 0.035) 1px, transparent 0);
+  background-size: 18px 18px;
+}
+
+/* A quiet gold rule used as an achievement accent. */
+@utility gold-rule {
+  display: block;
+  width: 2.25rem;
+  height: 1px;
+  background: var(--color-gold);
+}

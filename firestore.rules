@@ -1,0 +1,302 @@
+rules_version = '2';
+
+// ===========================================================================
+// CHAD RANKING — Firestore Security Rules
+//
+// Approved Phase 2 architecture:
+//   * Firebase Authentication + Cloud Firestore on the **Spark** plan.
+//   * No Cloud Functions, no Cloud Storage, no Blaze, no billing account.
+//   * Official scores, ranks, showcases, moderation and audit entries are
+//     written **only** by the trusted Cloudflare Worker, which uses a
+//     Firestore-scoped service account. The Admin SDK bypasses these rules.
+//
+// These rules therefore grant ordinary clients:
+//   * public reads for profile/leaderboard data,
+//   * a small, strictly-shaped set of self-owned writes,
+//   * nothing else. Every privileged collection is write-denied.
+//
+// Run `npm run test:rules` (Firebase Emulator Suite) before deploying.
+// Schema: docs/PHASE2_SCHEMA.md.
+// ===========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function userExists(uid) {
+      return exists(userPath(uid));
+    }
+
+    function userData(uid) {
+      return get(userPath(uid)).data;
+    }
+
+    // An active account is required for every write beyond basic reads.
+    function activeUser() {
+      return signedIn()
+        && userExists(request.auth.uid)
+        && userData(request.auth.uid).accountStatus == 'active';
+    }
+
+    // Admin checks always read the authoritative user document. Clients can
+    // never change `role`, so this cannot be self-granted.
+    function isAdmin() {
+      return activeUser()
+        && userData(request.auth.uid).role == 'admin';
+    }
+
+    // Mirrors RESERVED_USERNAMES in src/config/constants.ts (lowercase,
+    // alphanumeric only — hyphenated names already fail the pattern).
+    function blockedUsername(name) {
+      return name in [
+        'admin', 'administrator', 'chad', 'chadranking', 'moderator',
+        'mod', 'owner', 'root', 'support', 'staff', 'official', 'system',
+        'winner', 'judge', 'ranking'
+      ];
+    }
+
+    function validUsername(username) {
+      return username is string
+        && username.matches('^[A-Za-z0-9_]{3,20}$')
+        && !blockedUsername(username.lower());
+    }
+
+    // ---------------------------------------------------------------------
+    // users/{uid} — public profile
+    //
+    // Public read is intentional: usernames and rank titles are public.
+    // Email addresses live in Firebase Authentication and are never stored
+    // here. `role` and `accountStatus` are immutable from the client.
+    // ---------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.keys().hasAll([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.uid == uid
+        && validUsername(request.resource.data.username)
+        && request.resource.data.usernameLowercase == request.resource.data.username.lower()
+        // The reservation must be created in the same commit, so a profile can
+        // never claim a username that belongs to someone else.
+        && getAfter(
+             /databases/$(database)/documents/usernames/$(request.resource.data.usernameLowercase)
+           ).data.uid == uid
+        && request.resource.data.role == 'member'
+        && request.resource.data.accountStatus == 'active'
+        && request.resource.data.createdAt == request.time
+        && (
+          request.resource.data.profileImagePath == null
+          || request.resource.data.profileImagePath is string
+        );
+
+      // A member may change exactly one field: their profile picture pointer.
+      // Everything else (username, role, status, creation time) is fixed.
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.keys().hasAll([
+          'uid', 'username', 'usernameLowercase', 'profileImagePath',
+          'createdAt', 'role', 'accountStatus'
+        ])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['profileImagePath'])
+        && (
+          request.resource.data.profileImagePath == null
+          || request.resource.data.profileImagePath is string
+        );
+
+      // Account deletion is performed by the trusted Worker (Admin SDK), which
+      // also removes the Firebase Authentication user.
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // usernames/{usernameLowercase} — case-insensitive uniqueness.
+    // The document ID is the lowercased username, so Firestore itself
+    // enforces uniqueness. Created in the same transaction as the user doc.
+    // ---------------------------------------------------------------------
+    match /usernames/{usernameLowercase} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'usernameLowercase', 'createdAt'])
+        && request.resource.data.keys().hasAll(['uid', 'usernameLowercase', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.usernameLowercase == usernameLowercase
+        && usernameLowercase.matches('^[A-Za-z0-9_]{3,20}$')
+        && !blockedUsername(usernameLowercase)
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // profileImages/{uid} — compressed WebP/JPEG avatar stored as base64.
+    //
+    // Storage is Blaze-only, so images live in Firestore under the 1 MiB
+    // document limit. Rules bound the encoded size, the content type and the
+    // update frequency so a client cannot exhaust the Spark quota.
+    // ---------------------------------------------------------------------
+    match /profileImages/{uid} {
+      function validProfileImage(ownerUid) {
+        return request.resource.data.keys().hasOnly([
+            'uid', 'mime', 'data', 'bytes', 'width', 'height', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'uid', 'mime', 'data', 'bytes', 'width', 'height', 'updatedAt'
+          ])
+          && request.resource.data.uid == ownerUid
+          && request.resource.data.mime in ['image/webp', 'image/jpeg', 'image/png']
+          && request.resource.data.bytes is number
+          && request.resource.data.bytes >= 1
+          && request.resource.data.bytes <= 49152
+          && request.resource.data.data is string
+          // base64 expands by 4/3; 65,536 chars ≈ 48 KiB of image data.
+          && request.resource.data.data.size() <= 65536
+          && request.resource.data.width is number
+          && request.resource.data.width >= 64
+          && request.resource.data.width <= 1024
+          && request.resource.data.height is number
+          && request.resource.data.height >= 64
+          && request.resource.data.height <= 1024
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && activeUser()
+        && validProfileImage(uid);
+
+      // One update per hour per account.
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && activeUser()
+        && validProfileImage(uid)
+        && request.time > resource.data.updatedAt + duration.value(1, 'h');
+
+      allow delete: if signedIn() && request.auth.uid == uid && activeUser();
+    }
+
+    // ---------------------------------------------------------------------
+    // competitions/{wYYYY-MM-DD} — week window metadata.
+    // The week ID is derivable from the clock, so a client cannot invent or
+    // extend a competition. Only the trusted Worker records windows.
+    // ---------------------------------------------------------------------
+    match /competitions/{competitionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // submissions/{competitionId}_{uid} — official confirmed entries.
+    // Written only after the Worker has verified the session, the active week,
+    // the one-entry lock and the recomputed score. Publicly readable because
+    // the leaderboard is public; contains no private data.
+    // ---------------------------------------------------------------------
+    match /submissions/{submissionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // showcases/{competitionId}_{uid} — Top 10 showcase.
+    // Visible only while locked. Removed or expired showcases disappear from
+    // every read immediately; the Worker deletes the records and images.
+    // ---------------------------------------------------------------------
+    match /showcases/{showcaseId} {
+      allow read: if resource.data.status == 'locked';
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // showcaseImages/{competitionId}_{uid} — compressed showcase photo.
+    // Readable only while the linked showcase is locked. Written by the
+    // Worker after an eligibility check (rank ≤ 10 at submission time).
+    // ---------------------------------------------------------------------
+    match /showcaseImages/{showcaseId} {
+      allow read: if exists(/databases/$(database)/documents/showcases/$(showcaseId))
+        && get(/databases/$(database)/documents/showcases/$(showcaseId)).data.status == 'locked';
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // reports/{reporterUid}_{reportedUid} — private moderation queue.
+    // One report per reporter/target pair, enforced by the document ID.
+    // No free text: categories only, so private data cannot leak into the
+    // database through this collection.
+    // ---------------------------------------------------------------------
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && activeUser()
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'reportedUid', 'category', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'reporterUid', 'reportedUid', 'category', 'status', 'createdAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.reportedUid != request.auth.uid
+        && reportId == request.auth.uid + '_' + request.resource.data.reportedUid
+        && request.resource.data.category in [
+          'impersonation', 'fake-profile', 'inappropriate-image',
+          'offensive-content', 'spam'
+        ]
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time;
+
+      allow read: if isAdmin();
+
+      // Admins record a decision; the Worker also writes an audit entry.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['actioned', 'dismissed'];
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // adminAudit/{eventId} — trusted trail, readable by admins only.
+    // Retained for 90 days by the cleanup job (approved decision D8).
+    // ---------------------------------------------------------------------
+    match /adminAudit/{eventId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // rateLimits/{uid} — private counters used by the Worker.
+    // Never readable or writable from a browser.
+    // ---------------------------------------------------------------------
+    match /rateLimits/{uid} {
+      allow read, write: if false;
+    }
+
+    // Default deny for anything not explicitly allowed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

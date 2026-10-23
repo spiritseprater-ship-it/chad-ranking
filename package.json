@@ -1,0 +1,41 @@
+{
+  "name": "chad-ranking",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CHAD RANKING \u2014 a weekly community ranking competition. Phase 1 frontend.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty false",
+    "preview": "vite preview",
+    "smoke": "node scripts/smoke.mjs",
+    "emulators": "firebase emulators:start --only firestore",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-chad-ranking \"node --test tests/rules/firestore.rules.test.mjs\"",
+    "ci": "npm run build && npm run smoke"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "clsx": "^2.1.1",
+    "firebase": "^12.19.0",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "firebase-tools": "^15.34.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.5"
+  }
+}

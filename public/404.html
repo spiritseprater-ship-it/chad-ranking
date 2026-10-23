@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CHAD RANKING</title>
+    <script>
+      /*
+       * GitHub Pages serves this file for unknown deep links (SPA fallback).
+       * It stores the requested path and redirects to the site root, where
+       * index.html restores the path with history.replaceState().
+       *
+       * __CHAD_BASE__ is replaced at build time (see vite.config.ts) with the
+       * real base path, so project sites, custom domains and renames all
+       * redirect correctly without editing this file.
+       */
+      ;(function () {
+        var path = window.location.pathname
+        var base = '__CHAD_BASE__'
+
+        if (base.charAt(0) !== '/') {
+          // Build-time replacement missing (e.g. file opened directly).
+          var segments = path.split('/').filter(Boolean)
+          var isProjectSite =
+            /\.github\.io$/i.test(window.location.hostname) && segments.length > 0
+          base = isProjectSite && segments[0] ? '/' + segments[0] + '/' : '/'
+        }
+
+        var deepLink = path + window.location.search + window.location.hash
+        try {
+          sessionStorage.setItem('chad:spa-redirect', deepLink)
+        } catch (e) {}
+        window.location.replace(base)
+      })()
+    </script>
+  </head>
+  <body>
+    <p style="font-family: sans-serif; padding: 2rem">
+      Redirecting to CHAD RANKING…
+    </p>
+  </body>
+</html>

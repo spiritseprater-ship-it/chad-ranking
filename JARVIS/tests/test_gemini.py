@@ -259,10 +259,14 @@ def test_no_sdk_raises_config_error(monkeypatch) -> None:
     """
     # "from google import genai" resolves through the google package's attribute
     # once the SDK has been imported, so both the attribute and sys.modules must
-    # be blocked for the import inside initialize() to actually fail.
-    import google
+    # be blocked for the import inside initialize() to actually fail. The test
+    # job runs with a minimal dependency set, so google may not be installed.
+    try:
+        import google
 
-    monkeypatch.delattr(google, "genai", raising=False)
+        monkeypatch.delattr(google, "genai", raising=False)
+    except ImportError:
+        pass
     monkeypatch.setitem(sys.modules, "google.genai", None)
 
     client = GeminiClient(api_key=FAKE_KEY, model=DEFAULT_MODEL, max_retries=0)

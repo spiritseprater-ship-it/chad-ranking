@@ -1,0 +1,40 @@
+# Secrets / local configuration - never commit
+.env
+*.env
+!.env.example
+JARVIS/.env
+JARVIS/config.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime artefacts
+JARVIS/logs/
+*.log
+JARVIS/assets/generated/
+dist/
+build/
+*.spec
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+
+# Large local model files (downloaded at runtime, do not commit)
+JARVIS/models/
+*.onnx
+*.tflite
+*.pb
+*.bin

@@ -1,0 +1,118 @@
+{
+  "wake_word": {
+    "enabled": true,
+    "primary": "hey_jarvis",
+    "additional": [],
+    "custom_models": {},
+    "threshold": 0.5,
+    "refractory_seconds": 2.0,
+    "activation_phrases": [
+      "chalo kaam karte hain",
+      "chal kaam karte hain",
+      "chalo kaam kare",
+      "let's get to work",
+      "lets get to work",
+      "start working"
+    ],
+    "activation_response": "JARVIS online. Ready for your command."
+  },
+  "speech": {
+    "backend": "google",
+    "language": "en-IN",
+    "fallback_language": "hi-IN",
+    "google_api_key_env": "GOOGLE_SPEECH_API_KEY",
+    "whisper": {
+      "model_size": "tiny",
+      "device": "cpu",
+      "compute_type": "int8",
+      "language": null,
+      "initial_prompt": "Hinglish conversation. Mix of English, Hindi and Indian English. Names: Ramesh, Priya, Jaipur, Rajasthan."
+    },
+    "vosk": {
+      "model_path": ""
+    },
+    "sample_rate": 16000,
+    "frame_duration_ms": 80,
+    "vad": {
+      "start_threshold": 0.012,
+      "end_threshold": 0.008,
+      "noise_floor_multiplier": 3.0,
+      "silence_duration_ms": 900,
+      "max_utterance_seconds": 12,
+      "speech_timeout_seconds": 7,
+      "calibration_frames": 6
+    },
+    "microphone": {
+      "device": null,
+      "name_contains": ""
+    }
+  },
+  "voice": {
+    "engine": "sapi5",
+    "voice_name": "",
+    "rate": 175,
+    "volume": 0.9,
+    "self_echo_cooldown_ms": 700
+  },
+  "conversation": {
+    "timeout_seconds": 30,
+    "announce_timeout": false
+  },
+  "browser": {
+    "default": "chrome",
+    "chrome_path": "",
+    "search_url": "https://www.google.com/search?q={query}"
+  },
+  "automation": {
+    "scroll_amount": 5,
+    "volume_step": 10,
+    "search_max_results": 8,
+    "search_max_seconds": 8,
+    "search_max_entries": 40000
+  },
+  "permissions": {
+    "require_confirmation": {
+      "delete_files": true,
+      "overwrite_files": true,
+      "move_sensitive_files": true,
+      "external_communication": true,
+      "camera_access": true,
+      "install_software": true,
+      "system_configuration": true,
+      "web_search": false
+    },
+    "allowed_file_roots": [
+      "Desktop",
+      "Documents",
+      "Downloads",
+      "Pictures",
+      "Music",
+      "Videos",
+      "OneDrive"
+    ],
+    "sensitive_paths": [
+      "Windows",
+      "System32",
+      "Program Files",
+      "Program Files (x86)",
+      "AppData",
+      "$Recycle.Bin"
+    ]
+  },
+  "startup": {
+    "launch_at_boot": false,
+    "start_minimized": false,
+    "start_listening": true
+  },
+  "hotkey": {
+    "emergency_stop": "ctrl+alt+j"
+  },
+  "ui": {
+    "show_log": true
+  },
+  "logging": {
+    "level": "INFO",
+    "max_bytes": 1048576,
+    "backup_count": 3
+  }
+}

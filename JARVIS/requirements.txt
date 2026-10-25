@@ -1,0 +1,40 @@
+# JARVIS Phase 1 - Windows 11, Python 3.11 or 3.12 (64-bit)
+# Install with:  pip install -r requirements.txt
+
+# ---- Desktop UI -----------------------------------------------------------
+PySide6>=6.6.0,<7.0
+
+# ---- Audio capture / numerics --------------------------------------------
+sounddevice>=0.4.6
+numpy>=1.26,<3
+
+# ---- Wake word (100% local, no API key) -----------------------------------
+openwakeword>=0.6.0
+onnxruntime>=1.16.0 ; sys_platform == 'win32'
+onnxruntime>=1.16.0 ; sys_platform != 'win32'
+
+# ---- Speech recognition ---------------------------------------------------
+# Default cloud backend: Google Web Speech (free, no key, needs internet).
+SpeechRecognition>=3.10.0
+# Optional fully-local backends (pick one; both need a downloaded model).
+faster-whisper>=1.0.3
+vosk>=0.3.45
+
+# ---- Text to speech (offline SAPI5 on Windows) ----------------------------
+pyttsx3>=2.90
+# pywin32 is used implicitly by pyttsx3's SAPI5 driver on some installs.
+pywin32>=306 ; sys_platform == 'win32'
+
+# ---- Windows automation ---------------------------------------------------
+pyautogui>=0.9.54
+Pillow>=10.0.0
+pycaw>=20240210
+comtypes>=1.4.1
+
+# ---- Misc -----------------------------------------------------------------
+python-dotenv>=1.0.1
+requests>=2.31.0
+
+# ---- Tests / packaging ----------------------------------------------------
+pytest>=8.0.0
+pyinstaller>=6.3.0

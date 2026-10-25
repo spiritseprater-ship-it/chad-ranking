@@ -24,7 +24,12 @@ JARVIS/logs/
 JARVIS/assets/generated/
 dist/
 build/
-*.spec
+release/
+
+# Build outputs (download these from a GitHub Release instead of committing)
+JARVIS/JARVIS-Windows.zip
+JARVIS/SHA256SUMS.txt
+build-report.txt
 
 # Editor / OS
 .vscode/

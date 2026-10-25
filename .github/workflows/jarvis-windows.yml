@@ -77,6 +77,29 @@ jobs:
           Write-Host "Arch     : $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
           python -c "import sys; print('Python  :', sys.version); print('Exe     :', sys.executable)"
 
+      # Version probes: each step passes only for one interpreter version, so
+      # the set of passing steps below names the runner's Python exactly.
+      - name: Diag - python is 3.11
+        shell: pwsh
+        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 11) else 1)"
+
+      - name: Diag - python is 3.12
+        shell: pwsh
+        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)"
+
+      - name: Diag - python is 3.13
+        shell: pwsh
+        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 13) else 1)"
+
+      - name: Diag - venv creation works
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:TEMP "jarvis-venv-diag"
+          if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+          python -m venv $tmp
+          if ($LASTEXITCODE -ne 0) { Write-Host "venv creation failed"; exit 1 }
+          & (Join-Path $tmp "Scripts\python.exe") -c "print('venv ok')"
+
       # Each phase runs as its own step: the failed step's name says which
       # stage broke, which matters because the run log itself is not reachable.
       - name: Build phase 1 - Python check and venv

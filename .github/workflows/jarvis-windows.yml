@@ -255,112 +255,137 @@ jobs:
           if (Test-Path "build\JARVIS\JARVIS.pkg") { Write-Host "PKG present"; exit 0 }
           Write-Host "PKG missing"; exit 1
 
-      - name: Diag - variant [hiddenimports removed]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $src = Get-Content JARVIS.spec -Raw -Encoding UTF8
-          $variant = $src -replace "(?s)hiddenimports=\[[^\]]*\]", "hiddenimports=[]"
-          Set-Content -Path JARVIS-variant.spec -Value $variant -Encoding UTF8
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist-v --workpath build-v JARVIS-variant.spec *>&1 | Out-Null
-          if (Test-Path "dist-v\JARVIS\JARVIS.exe") { Write-Host "variant built"; exit 0 }
-          Write-Host "variant failed"; exit 1
-
-      - name: Diag - variant [datas removed]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $src = Get-Content JARVIS.spec -Raw -Encoding UTF8
-          $variant = $src -replace "(?s)datas=\[[^\]]*\]", "datas=[]"
-          Set-Content -Path JARVIS-variant.spec -Value $variant -Encoding UTF8
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist-v --workpath build-v JARVIS-variant.spec *>&1 | Out-Null
-          if (Test-Path "dist-v\JARVIS\JARVIS.exe") { Write-Host "variant built"; exit 0 }
-          Write-Host "variant failed"; exit 1
-
-      - name: Diag - variant [excludes removed]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $src = Get-Content JARVIS.spec -Raw -Encoding UTF8
-          $variant = $src -replace "(?s)excludes=\[[^\]]*\]", "excludes=[]"
-          Set-Content -Path JARVIS-variant.spec -Value $variant -Encoding UTF8
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist-v --workpath build-v JARVIS-variant.spec *>&1 | Out-Null
-          if (Test-Path "dist-v\JARVIS\JARVIS.exe") { Write-Host "variant built"; exit 0 }
-          Write-Host "variant failed"; exit 1
-
-      - name: Diag - capture the build error lines
+      - name: Diag - capture strict errors and the log tail
         if: always()
         shell: pwsh
         id: capture
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          $lines = @($log -split "`r?`n" | Where-Object { $_ -match "(?i)error|traceback|exception|failed" } | Select-Object -Last 8)
+          $lines = @($log -split "`r?`n")
+          $strict = @($lines | Where-Object { $_ -match "(?i)^\s*error|traceback|exception:|failed to" } | Select-Object -Last 8)
+          $tail = @($lines | Where-Object { $_ -notmatch "(?i)^\s*(INFO|WARNING).*(Analyzing|hidden import)" } | Select-Object -Last 8)
           for ($i = 1; $i -le 8; $i++) {
-            if ($i -le $lines.Count) {
-              $t = $lines[$i - 1].Trim() -replace "[^A-Za-z0-9]", "-"
-              if ($t.Length -gt 130) { $t = $t.Substring(0, 130) }
-            } else { $t = "none" }
-            Add-Content -Path "$env:GITHUB_OUTPUT" -Value ("err{0}={1}" -f $i, $t)
+            $a = if ($i -le $strict.Count) { $strict[$i - 1].Trim() } else { "none" }
+            $b = if ($i -le $tail.Count) { $tail[$i - 1].Trim() } else { "none" }
+            $a = ($a -replace "[^A-Za-z0-9]", "-")
+            if ($a.Length -gt 120) { $a = $a.Substring(0, 120) }
+            $b = ($b -replace "[^A-Za-z0-9]", "-")
+            if ($b.Length -gt 120) { $b = $b.Substring(0, 120) }
+            Add-Content -Path "$env:GITHUB_OUTPUT" -Value ("strict{0}={1}" -f $i, $a)
+            Add-Content -Path "$env:GITHUB_OUTPUT" -Value ("tail{0}={1}" -f $i, $b)
           }
-          Set-Content -Path diag-error.txt -Value ($lines -join "`n") -Encoding UTF8
+          Set-Content -Path diag-error.txt -Value ($strict -join "`n") -Encoding UTF8
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e1-${{ steps.capture.outputs.err1 }}
+          name: diag-strict1-${{ steps.capture.outputs.strict1 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e2-${{ steps.capture.outputs.err2 }}
+          name: diag-tail1-${{ steps.capture.outputs.tail1 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e3-${{ steps.capture.outputs.err3 }}
+          name: diag-strict2-${{ steps.capture.outputs.strict2 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e4-${{ steps.capture.outputs.err4 }}
+          name: diag-tail2-${{ steps.capture.outputs.tail2 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e5-${{ steps.capture.outputs.err5 }}
+          name: diag-strict3-${{ steps.capture.outputs.strict3 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e6-${{ steps.capture.outputs.err6 }}
+          name: diag-tail3-${{ steps.capture.outputs.tail3 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e7-${{ steps.capture.outputs.err7 }}
+          name: diag-strict4-${{ steps.capture.outputs.strict4 }}
           path: diag-error.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: diag-e8-${{ steps.capture.outputs.err8 }}
+          name: diag-tail4-${{ steps.capture.outputs.tail4 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-strict5-${{ steps.capture.outputs.strict5 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-tail5-${{ steps.capture.outputs.tail5 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-strict6-${{ steps.capture.outputs.strict6 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-tail6-${{ steps.capture.outputs.tail6 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-strict7-${{ steps.capture.outputs.strict7 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-tail7-${{ steps.capture.outputs.tail7 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-strict8-${{ steps.capture.outputs.strict8 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diag-tail8-${{ steps.capture.outputs.tail8 }}
           path: diag-error.txt
           if-no-files-found: ignore
 

@@ -312,28 +312,6 @@ jobs:
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
 
-      - name: Annotate the failure with the log tail
-        if: failure()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $log = "..\build-log.txt"
-          if (-not (Test-Path $log)) { Write-Host "No log to annotate"; exit 0 }
-          $tail = Get-Content $log -Tail 80 -ErrorAction SilentlyContinue
-          $msg = ($tail -join "`n")
-          if ($msg.Length -gt 8000) { $msg = $msg.Substring($msg.Length - 8000) }
-          $headers = @{
-              Authorization = "Bearer $env:GITHUB_TOKEN"
-              "X-GitHub-Api-Version" = "2022-11-28"
-          }
-          $body = (@{ message = $msg; path = "build-log.txt"; level = "error" } | ConvertTo-Json -Compress)
-          try {
-              Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/annotations" -Method Post -Headers $headers -Body $body -ContentType "application/json" | Out-Null
-              Write-Host "Annotation posted"
-          } catch {
-              Write-Warning "Could not post an annotation: $($_.Exception.Message)"
-          }
-
       - name: Publish the build log (stage)
         if: always()
         working-directory: JARVIS

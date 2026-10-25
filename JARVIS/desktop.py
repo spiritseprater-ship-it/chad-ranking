@@ -384,10 +384,18 @@ class DesktopController:
     # -- windows (ctypes, no extra dependency) ------------------------------
 
     def list_windows(self) -> List[Dict[str, object]]:
-        """Enumerate visible top-level windows with their titles."""
+        """Enumerate visible top-level windows with their titles.
+
+        Read-only and never raises: a failed enumeration simply reports no
+        windows, so a status or focus request cannot crash the worker thread.
+        """
         if not WINDOWS:
             return []
-        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        try:
+            user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - non-Windows or broken COM
+            log.debug("window enumeration unavailable: %s", exc)
+            return []
 
         @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)  # type: ignore[attr-defined]
         def enum_proc(hwnd, _lparam):
@@ -417,7 +425,11 @@ class DesktopController:
             return True
 
         self._window_handles_cache = []
-        user32.EnumWindows(enum_proc, 0)
+        try:
+            user32.EnumWindows(enum_proc, 0)
+        except Exception as exc:  # pragma: no cover - Win32 failure
+            log.debug("EnumWindows failed: %s", exc)
+            return []
         return list(self._window_handles_cache)
 
     def _match_window(self, title: str) -> Optional[Dict[str, object]]:
@@ -769,8 +781,13 @@ class DesktopController:
             return ToolResult(False, f"Screenshot failed: {exc}")
 
     def system_status(self) -> ToolResult:
-        windows = self.list_windows()
-        active = self.active_window()
+        # a status report must never raise: it feeds diagnostics and the GUI
+        try:
+            windows = self.list_windows()
+            active = self.active_window()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.debug("system_status failed: %s", exc)
+            return ToolResult(True, "Could not enumerate windows.", {"error": str(exc)})
         return ToolResult(
             True,
             f"{len(windows)} visible window(s); active: "

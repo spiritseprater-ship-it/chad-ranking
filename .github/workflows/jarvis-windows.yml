@@ -223,6 +223,30 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller phase failed with exit code $LASTEXITCODE" }
 
+      - name: Diag - PyInstaller produced the exe
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          if (Test-Path "dist\JARVIS\JARVIS.exe") { Write-Host "JARVIS.exe present"; exit 0 }
+          Write-Host "JARVIS.exe missing"; exit 1
+
+      - name: Diag - PyInstaller produced the PYZ
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          if (Test-Path "build\JARVIS\PYZ-00.pyz") { Write-Host "PYZ present"; exit 0 }
+          Write-Host "PYZ missing"; exit 1
+
+      - name: Diag - PyInstaller produced the PKG
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          if (Test-Path "build\JARVIS\JARVIS.pkg") { Write-Host "PKG present"; exit 0 }
+          Write-Host "PKG missing"; exit 1
+
       - name: Build phase 7 - package the zip
         if: always()
         working-directory: JARVIS

@@ -38,7 +38,9 @@ if os.path.isdir(assets_dir):
 for _name in ("config.json", "README.txt"):
     _path = os.path.join(BASE_DIR, _name)
     if os.path.isfile(_path):
-        datas.append((_path, ""))
+        # DEST_DIR "." puts them in the bundle root, where paths.resource_dir()
+        # (sys._MEIPASS) finds them. PyInstaller 6 rejects an empty string here.
+        datas.append((_path, "."))
 
 # --- modules PyInstaller cannot discover on its own -------------------------
 try:

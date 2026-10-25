@@ -30,6 +30,8 @@ release/
 JARVIS/JARVIS-Windows.zip
 JARVIS/SHA256SUMS.txt
 build-report.txt
+pytest-output.txt
+build-log.txt
 
 # Editor / OS
 .vscode/

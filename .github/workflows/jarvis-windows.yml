@@ -162,6 +162,26 @@ jobs:
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
 
+      - name: Publish the build log into git
+        # Run logs and artifacts live on hosts this environment cannot reach,
+        # so a tag on the branch makes the log readable through the GitHub API.
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "..\build-log.txt"
+          if (-not (Test-Path $log)) { Write-Host "No build log to publish"; exit 0 }
+          $hash = (Get-FileHash $log -Algorithm SHA256).Hash
+          git config user.email "ci@users.noreply.github.com"
+          git config user.name "JARVIS CI"
+          git add -f -A
+          if (-not (git diff --cached --quiet)) {
+              git commit -q -m "ci: build log $hash"
+          }
+          # a tag name that starts with 'buildlog/' does not match the v* tag
+          # trigger, so publishing the log cannot restart this workflow
+          git push -q origin "HEAD:refs/tags/buildlog/$hash"
+          Write-Host "Published build log as tag buildlog/$hash"
+
       - name: Upload the build log
         if: always()
         uses: actions/upload-artifact@v4

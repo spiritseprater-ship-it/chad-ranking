@@ -11,8 +11,10 @@ folder next to the executable - deleting it breaks the app.
 Size notes (measured during development, October 2026):
 
 * PySide6 + numpy + the Gemini SDK account for most of the runtime.
-* onnxruntime is bundled for the local wake word; it is the single largest
-  contributor and cannot be dropped without losing always-on wake detection.
+* onnxruntime + scipy + scikit-learn are bundled for the local wake word
+  (openwakeword imports all three at import time). They are the largest
+  contributors together and cannot be dropped without losing always-on wake
+  detection.
 * Playwright's Chromium is NOT bundled. Browser automation needs
   ``playwright install chromium`` once on the target PC (~150 MB in the user
   profile), which is why it stays optional and disabled by default.
@@ -74,7 +76,9 @@ hiddenimports += [
 excludes = [
     "tkinter",
     "matplotlib",
-    "scipy",
+    # scipy is deliberately NOT excluded: openwakeword imports it (and
+    # scikit-learn) at import time, and the local wake word is a core
+    # feature. The size cost is real - see the header note.
     "pandas",
     "IPython",
     "jupyter",

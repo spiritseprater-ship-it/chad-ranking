@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -248,10 +249,26 @@ def test_error_classification(message: str, expected: type) -> None:
     assert isinstance(error, expected)
 
 
-def test_no_sdk_raises_config_error() -> None:
+def test_no_sdk_raises_config_error(monkeypatch) -> None:
+    """With the SDK import blocked, requests must fail with a clear config error.
+
+    Blocking the module in sys.modules is what makes this test meaningful on a
+    machine where google-genai IS installed: faking ``_init_error`` alone does
+    not work, because initialize() happily rebuilds the client while the SDK is
+    present and never consults the stale flag.
+    """
+    # "from google import genai" resolves through the google package's attribute
+    # once the SDK has been imported, so both the attribute and sys.modules must
+    # be blocked for the import inside initialize() to actually fail.
+    import google
+
+    monkeypatch.delattr(google, "genai", raising=False)
+    monkeypatch.setitem(sys.modules, "google.genai", None)
+
     client = GeminiClient(api_key=FAKE_KEY, model=DEFAULT_MODEL, max_retries=0)
-    client._client = None
-    client._init_error = "google-genai is not installed"
+
+    assert client.initialize() is False
+    assert client.error
     with pytest.raises(GeminiConfigError):
         client.chat("hello")
 

@@ -16,7 +16,11 @@ pyttsx3>=2.90                    # offline text to speech (SAPI5)
 pywin32>=306 ; sys_platform == 'win32'
 
 # ---- Wake word (local, no API key) -----------------------------------------
-openwakeword>=0.7.0
+# NOTE: 0.7.0 does not exist - the latest release on PyPI is 0.6.0, so the pin
+# below is the highest installable range. openwakeword imports scipy and
+# scikit-learn at import time, which is why those two stay bundled (they are
+# NOT in JARVIS.spec's excludes) - dropping them silently disables the wake word.
+openwakeword>=0.5.0,<1.0
 onnxruntime>=1.16.0
 
 # ---- Speech recognition (install at least one) -----------------------------

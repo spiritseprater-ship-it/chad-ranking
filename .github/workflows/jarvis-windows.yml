@@ -14,9 +14,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A CI log commit is pushed to this branch so the log stays readable; those
+  # pushes must not rebuild the app.
   # ---------------------------------------------------------------- tests ----
   test:
     name: Unit tests
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci-build-log') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +60,7 @@ jobs:
   # ---------------------------------------------------------------- build ----
   build:
     name: Windows EXE (onedir)
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci-build-log') }}
     needs: test
     runs-on: windows-latest
     steps:
@@ -176,12 +180,16 @@ jobs:
           git config user.name "JARVIS CI"
           git add -f -A
           if (-not (git diff --cached --quiet)) {
-              git commit -q -m "ci: build log $hash"
+              git commit -q -m "ci-build-log $hash"
+          } else {
+              Write-Host "The log file is already committed"
           }
-          # a tag name that starts with 'buildlog/' does not match the v* tag
-          # trigger, so publishing the log cannot restart this workflow
-          git push -q origin "HEAD:refs/tags/buildlog/$hash"
-          Write-Host "Published build log as tag buildlog/$hash"
+          # Pushing to the branch is what makes the log readable; the jobs above
+          # skip commits whose message starts with 'ci-build-log', so this can
+          # never restart the build.
+          git push origin "refs/heads/arena/cc541324-chad-ranking" 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 0) { Write-Warning "Could not push the build log to the branch" }
+          Write-Host "Published build log ($hash) on arena/cc541324-chad-ranking"
 
       - name: Upload the build log
         if: always()
@@ -226,6 +234,7 @@ jobs:
   # -------------------------------------------------------------- release ----
   release:
     name: GitHub Release
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci-build-log') }}
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest

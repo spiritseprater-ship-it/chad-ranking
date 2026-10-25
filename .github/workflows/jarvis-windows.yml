@@ -30,6 +30,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install PySide6 sounddevice numpy python-dotenv pytest
 
+      - name: Install the Qt/GL runtime libraries
+        # Without these PySide6 cannot import QtGui at all and the orb widget
+        # test would silently skip instead of really exercising the paint path.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
       - name: Run the test suite
         working-directory: JARVIS
         run: python -m pytest tests -q

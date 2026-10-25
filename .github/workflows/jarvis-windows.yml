@@ -149,180 +149,12 @@ jobs:
           & .\.venv\Scripts\python.exe -m pytest "tests/test_config_and_voice.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "tests/test_config_and_voice.py failed" }
 
-      - name: Tests - Desktop [test_similarity_is_symmetric]
+      - name: Tests - Desktop
         if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_similarity_is_symmetric" -q
-      - name: Tests - Desktop [test_ranking_prefers_the_exact_filename]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_prefers_the_exact_filename" -q
-      - name: Tests - Desktop [test_ranking_rewards_all_keywords_present]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_rewards_all_keywords_present" -q
-      - name: Tests - Desktop [test_ranking_handles_partial_matches]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_handles_partial_matches" -q
-      - name: Tests - Desktop [test_ranking_boosts_office_formats]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_boosts_office_formats" -q
-      - name: Tests - Desktop [test_ranking_returns_nothing_for_empty_query]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_returns_nothing_for_empty_query" -q
-      - name: Tests - Desktop [test_ranking_matches_folder_names]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_ranking_matches_folder_names" -q
-      - name: Tests - Desktop [test_index_finds_files]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_index_finds_files" -q
-      - name: Tests - Desktop [test_index_skips_hidden_and_system_folders]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_index_skips_hidden_and_system_folders" -q
-      - name: Tests - Desktop [test_index_respects_the_entry_cap]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_index_respects_the_entry_cap" -q
-      - name: Tests - Desktop [test_search_files_returns_matches]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_search_files_returns_matches" -q
-      - name: Tests - Desktop [test_search_files_without_results]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_search_files_without_results" -q
-      - name: Tests - Desktop [test_create_and_rename_folder]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_create_and_rename_folder" -q
-      - name: Tests - Desktop [test_rename_rejects_existing_target]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_rename_rejects_existing_target" -q
-      - name: Tests - Desktop [test_copy_and_move]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_copy_and_move" -q
-      - name: Tests - Desktop [test_sensitive_paths_are_protected]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_sensitive_paths_are_protected" -q
-      - name: Tests - Desktop [test_read_document_only_reads_text]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_read_document_only_reads_text" -q
-      - name: Tests - Desktop [test_resolve_file_by_name]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_resolve_file_by_name" -q
-      - name: Tests - Desktop [test_system_status_reports_windows]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_system_status_reports_windows" -q
-      - name: Tests - Desktop [test_registry_rejects_unknown_tools]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_rejects_unknown_tools" -q
-      - name: Tests - Desktop [test_registry_rejects_tools_not_enabled]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_rejects_tools_not_enabled" -q
-      - name: Tests - Desktop [test_registry_requires_confirmation_for_sensitive_tools]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_requires_confirmation_for_sensitive_tools" -q
-      - name: Tests - Desktop [test_registry_cancelled_by_the_user]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_cancelled_by_the_user" -q
-      - name: Tests - Desktop [test_registry_runs_allowed_tools]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_runs_allowed_tools" -q
-      - name: Tests - Desktop [test_registry_local_commands_need_an_executor]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_local_commands_need_an_executor" -q
-      - name: Tests - Desktop [test_registry_validates_click_arguments]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_validates_click_arguments" -q
-      - name: Tests - Desktop [test_registry_limits_keyboard_length]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_limits_keyboard_length" -q
-      - name: Tests - Desktop [test_registry_survives_handler_crashes]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_registry_survives_handler_crashes" -q
-      - name: Tests - Desktop [test_startup_manager_is_a_no_op_off_windows]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py::test_startup_manager_is_a_no_op_off_windows" -q
+          & .\.venv\Scripts\python.exe -m pytest "tests/test_desktop.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "tests/test_desktop.py failed" }
 
       - name: Tests - Gemini
@@ -423,106 +255,7 @@ jobs:
           if (Test-Path "build\JARVIS\JARVIS.pkg") { Write-Host "PKG present"; exit 0 }
           Write-Host "PKG missing"; exit 1
 
-      - name: Diag - sig disk space
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)no space left") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig not enough space
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)not enough space") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig PermissionError
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)permissionerror") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig access denied
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)access is denied") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig FileNotFoundError
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)filenotfounderror") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig ModuleNotFoundError
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)modulenotfounderror") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig ImportError
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)importerror") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig AttributeError
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)attributeerror") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig MAX_PATH
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)max_path") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig path too long
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)too long") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig UPX
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)upx") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig invalid image
+      - name: Diag - sig invalid
         if: always()
         shell: pwsh
         run: |
@@ -531,32 +264,130 @@ jobs:
           if ($log -match "(?i)invalid") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-
-      - name: Diag - sig not a valid win32 application
+      - name: Diag - sig warning
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)not a valid win32 application") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)warning") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig is not a valid
+      - name: Diag - sig error
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)is not a valid") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)error") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig invalid image
+      - name: Diag - sig failed
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid image") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)failed") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig missing
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)missing") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig unable
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)unable") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig winerror
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)winerror") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig hidden import
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)hidden import") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig data file
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)data file") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig not found
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)not found") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig does not exist
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)does not exist") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig already exists
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)already exists") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig read-only
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)read-only") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig sharing violation
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)sharing violation") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig busy
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)busy") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
       - name: Diag - sig overlay
@@ -568,31 +399,67 @@ jobs:
           if ($log -match "(?i)overlay") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig bootloader
+      - name: Diag - sig pe file
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)bootloader") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)pe file") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig cannot find
+      - name: Diag - sig version info
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)cannot find") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)version info") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig no such file
+      - name: Diag - sig resource
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)no such file") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)resource") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig pyside6
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)pyside6") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig qt
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)qt") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig icon
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)icon") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig upx
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)upx") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
       - name: Diag - sig traceback
@@ -613,22 +480,67 @@ jobs:
           if ($log -match "(?i)exception") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig could not
+      - name: Diag - sig max_path
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)could not") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)max_path") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
-      - name: Diag - sig failed to
+      - name: Diag - sig too long
         if: always()
         shell: pwsh
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)failed to") { Write-Host "matched"; exit 0 }
+          if ($log -match "(?i)too long") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig not enough space
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)not enough space") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig permission denied
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)permission denied") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig access is denied
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)access is denied") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig no space left
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)no space left") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig disk
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)disk") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
 

@@ -104,8 +104,16 @@ try {
         Write-Step "Building with PyInstaller"
         if (Test-Path build) { Remove-Item -Recurse -Force build }
         if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
-        & $VenvPython -m PyInstaller --noconfirm --clean JARVIS.spec
-        if ($LASTEXITCODE -ne 0) { Fail "PyInstaller failed." }
+        $built = $false
+        foreach ($attempt in 1..2) {
+            & $VenvPython -m PyInstaller --noconfirm --clean JARVIS.spec
+            if ($LASTEXITCODE -eq 0) { $built = $true; break }
+            Write-Warning "PyInstaller attempt $attempt failed; retrying once."
+            if (Test-Path build) { Remove-Item -Recurse -Force build }
+            if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
+            Start-Sleep -Seconds 10
+        }
+        if (-not $built) { Fail "PyInstaller failed." }
         if (-not (Test-Path $AppDir)) { Fail "The build did not produce $AppDir." }
 
         Write-Step "Measuring the build"

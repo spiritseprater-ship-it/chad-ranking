@@ -291,312 +291,79 @@ jobs:
           if (Test-Path "dist-v\JARVIS\JARVIS.exe") { Write-Host "variant built"; exit 0 }
           Write-Host "variant failed"; exit 1
 
-      - name: Diag - sig invalid spec
+      - name: Diag - capture the build error lines
         if: always()
         shell: pwsh
+        id: capture
         run: |
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid spec") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+          $lines = @($log -split "`r?`n" | Where-Object { $_ -match "(?i)error|traceback|exception|failed" } | Select-Object -Last 8)
+          for ($i = 1; $i -le 8; $i++) {
+            if ($i -le $lines.Count) {
+              $t = $lines[$i - 1].Trim() -replace "[^A-Za-z0-9]", "-"
+              if ($t.Length -gt 130) { $t = $t.Substring(0, 130) }
+            } else { $t = "none" }
+            Add-Content -Path "$env:GITHUB_OUTPUT" -Value ("err{0}={1}" -f $i, $t)
+          }
+          Set-Content -Path diag-error.txt -Value ($lines -join "`n") -Encoding UTF8
 
-      - name: Diag - sig invalid data
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid data") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e1-${{ steps.capture.outputs.err1 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid option
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid option") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e2-${{ steps.capture.outputs.err2 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid hidden import
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid hidden import") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e3-${{ steps.capture.outputs.err3 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid python
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid python") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e4-${{ steps.capture.outputs.err4 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid library
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid library") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e5-${{ steps.capture.outputs.err5 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid toc
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid toc") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e6-${{ steps.capture.outputs.err6 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid pe
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid pe") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e7-${{ steps.capture.outputs.err7 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid argument
+      - uses: actions/upload-artifact@v4
         if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid argument") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
+        with:
+          name: diag-e8-${{ steps.capture.outputs.err8 }}
+          path: diag-error.txt
+          if-no-files-found: ignore
 
-      - name: Diag - sig invalid value
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid value") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig invalid file
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid file") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig invalid type
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)invalid type") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig not a valid
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)not a valid") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig not valid
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)not valid") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig bootloader
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)bootloader") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig run.exe
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)run.exe") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig runw.exe
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)runw.exe") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig apphost
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)apphost") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig append
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)append") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig overlay
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)overlay") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig carchive
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)carchive") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig assemble
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)assemble") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig makespec
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)makespec") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig spec file
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)spec file") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig onedir
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)onedir") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig windowed
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)windowed") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig upx
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)upx") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-      - name: Diag - sig distpath
-        if: always()
-        shell: pwsh
-        run: |
-          $log = ""
-          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
-          if ($log -match "(?i)distpath") { Write-Host "matched"; exit 0 }
-          Write-Host "not present"; exit 1
-
-
-      - name: Diag - PyInstaller windowed bootloader present
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $p = ".\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe"
-          if (Test-Path $p) { Write-Host "runw.exe present"; exit 0 }
-          Write-Host "runw.exe MISSING"; exit 1
-      - name: Diag - PyInstaller console bootloader present
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $p = ".\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe"
-          if (Test-Path $p) { Write-Host "run.exe present"; exit 0 }
-          Write-Host "run.exe MISSING"; exit 1
-      - name: Diag - list the bootloader directory
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $d = ".\.venv\Lib\site-packages\PyInstaller\bootloader"
-          if (Test-Path $d) { Get-ChildItem $d -Recurse -File | Select-Object -ExpandProperty Name }
-          Write-Host "--- end listing ---"
-      - name: Diag - variant [console=True]
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          $src = Get-Content JARVIS.spec -Raw -Encoding UTF8
-          $variant = $src -replace "console=False", "console=True"
-          Set-Content -Path JARVIS-variant.spec -Value $variant -Encoding UTF8
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist-c --workpath build-c JARVIS-variant.spec *>&1 | Out-Null
-          if (Test-Path "dist-c\JARVIS\JARVIS.exe") { Write-Host "console build succeeded"; exit 0 }
-          Write-Host "console build failed"; exit 1
-
-      - name: Diag - trivial console build
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          Set-Content -Path hello.py -Value "print('hello')" -Encoding UTF8
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --distpath dist-h --workpath build-h --name HELLO hello.py *>&1 | Out-Null
-          if (Test-Path "dist-h\HELLO\HELLO.exe") { Write-Host "trivial console build OK"; exit 0 }
-          Write-Host "trivial console build FAILED"; exit 1
-      - name: Diag - trivial windowed build
-        if: always()
-        working-directory: JARVIS
-        shell: pwsh
-        run: |
-          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --windowed --distpath dist-h2 --workpath build-h2 --name HELLO2 hello.py *>&1 | Out-Null
-          if (Test-Path "dist-h2\HELLO2\HELLO2.exe") { Write-Host "trivial windowed build OK"; exit 0 }
-          Write-Host "trivial windowed build FAILED"; exit 1
 
       - name: Build phase 7 - package the zip
         if: always()

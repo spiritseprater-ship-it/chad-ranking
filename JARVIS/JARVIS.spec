@@ -115,13 +115,15 @@ a = Analysis(
 )
 pyz = PYZ(a.pure, a.zipped_data)
 
+# onedir layout: EXE carries only the launcher and the bytecode, while COLLECT
+# assembles the runtime folder next to it. Without COLLECT PyInstaller builds a
+# single-file EXE instead, so dist/JARVIS/ never appears and the bundle is
+# wrong - the runtime folder is what keeps the app working after extraction.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
@@ -137,4 +139,12 @@ exe = EXE(
     entitlements_file=None,
     icon=None,             # icon is drawn at runtime; add one here if you have it
     version=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    name=APP_NAME,
 )

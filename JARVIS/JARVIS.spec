@@ -20,8 +20,6 @@ Size notes (measured during development, October 2026):
 
 import os
 
-block_cipher = None
-
 APP_NAME = "JARVIS"
 BASE_DIR = SPECPATH  # directory of this spec file
 
@@ -103,12 +101,13 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,
-    win_no_prefer_redirects=False,
+    # NOTE: PyInstaller 6 removed the `cipher` and `win_no_prefer_redirects`
+    # arguments (and there is nothing to encrypt for a local desktop app), so
+    # this spec targets PyInstaller 6.x - see pyinstaller>=6.3.0 in requirements.txt.
     win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,

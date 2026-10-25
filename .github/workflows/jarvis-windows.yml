@@ -76,7 +76,10 @@ jobs:
           # End-to-end run of the documented Windows build script. It creates a
           # clean .venv, installs requirements.txt, runs the test suite, runs
           # `main.py --check`, builds with PyInstaller and packages JARVIS-Windows.zip.
-          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python
+          # keep the whole build output so a failure can be read even when the
+          # run log endpoint is unreachable
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python *>&1 |
+              Tee-Object -FilePath ..\build-log.txt
           if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed with exit code $LASTEXITCODE" }
 
       - name: Verify the zip contents
@@ -158,6 +161,14 @@ jobs:
           Copy-Item ".\dist\JARVIS\JARVIS.exe" "..\artifacts\JARVIS.exe" -Force
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
+
+      - name: Upload the build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-build-log
+          path: build-log.txt
+          if-no-files-found: ignore
 
       - name: Upload the test output
         if: always()

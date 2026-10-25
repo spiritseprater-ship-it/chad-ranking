@@ -247,6 +247,22 @@ jobs:
           if (Test-Path "build\JARVIS\JARVIS.pkg") { Write-Host "PKG present"; exit 0 }
           Write-Host "PKG missing"; exit 1
 
+      - name: Diag - publish PyInstaller error text
+        if: always()
+        shell: pwsh
+        run: |
+          try {
+            $log = ""
+            if (Test-Path "..\build-log.txt") { $log = Get-Content "..\build-log.txt" -Raw }
+            if (-not $log) { $log = "no build log captured" }
+            $hits = @($log -split "`r?`n" | Select-String -Pattern "ERROR|Traceback|Exception|error:" | Select-Object -Last 20)
+            $desc = ($hits | ForEach-Object { $_.Line.Trim() }) -join " ;; "
+            if ($desc.Length -gt 400) { $desc = $desc.Substring(0, 400) }
+            $desc = $desc -replace "\s+", " "
+            gh api -X POST "repos/spiritseprater-ship-it/chad-ranking/statuses/$env:GITHUB_SHA" -f state=failure -f description="$desc"
+            Write-Host "status posted"
+          } catch { Write-Host "status post skipped: $($_.Exception.Message)" }
+
       - name: Build phase 7 - package the zip
         if: always()
         working-directory: JARVIS

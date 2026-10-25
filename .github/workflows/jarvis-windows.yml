@@ -580,6 +580,24 @@ jobs:
           if (Test-Path "dist-c\JARVIS\JARVIS.exe") { Write-Host "console build succeeded"; exit 0 }
           Write-Host "console build failed"; exit 1
 
+      - name: Diag - trivial console build
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          Set-Content -Path hello.py -Value "print('hello')" -Encoding UTF8
+          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --distpath dist-h --workpath build-h --name HELLO hello.py *>&1 | Out-Null
+          if (Test-Path "dist-h\HELLO\HELLO.exe") { Write-Host "trivial console build OK"; exit 0 }
+          Write-Host "trivial console build FAILED"; exit 1
+      - name: Diag - trivial windowed build
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --windowed --distpath dist-h2 --workpath build-h2 --name HELLO2 hello.py *>&1 | Out-Null
+          if (Test-Path "dist-h2\HELLO2\HELLO2.exe") { Write-Host "trivial windowed build OK"; exit 0 }
+          Write-Host "trivial windowed build FAILED"; exit 1
+
       - name: Build phase 7 - package the zip
         if: always()
         working-directory: JARVIS

@@ -74,6 +74,16 @@ from gemini import (  # noqa: E402
     extract_api_key,
     looks_like_placeholder,
 )
+from paths import (  # noqa: E402
+    application_dir,
+    default_config_path,
+    ensure_user_config,
+    find_dotenv,
+    entry_path,
+    log_dir,
+    resource_dir,
+    user_data_dir,
+)
 from planner import (  # noqa: E402
     TOOL_PREFIX,
     TaskHistory,
@@ -96,8 +106,13 @@ from voice import (  # noqa: E402
 )
 log = logging.getLogger("jarvis.main")
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG_PATH = BASE_DIR / "config.json"
+# --- filesystem locations (see paths.py) ---------------------------------
+# BASE_DIR is the folder the user sees: the onedir folder when packaged, the
+# JARVIS folder when running from source.  RESOURCE_DIR holds the read-only
+# bundled resources (default config.json, assets).
+BASE_DIR = application_dir()
+RESOURCE_DIR = resource_dir()
+DEFAULT_CONFIG_PATH = default_config_path()
 
 CONFIG_DEFAULTS: Dict[str, object] = {
     "wake_word": {
@@ -142,7 +157,13 @@ class ConfigError(RuntimeError):
 
 def load_config(path: Optional[str] = None) -> Dict[str, object]:
     """Load, merge and validate ``config.json``."""
-    config_path = Path(path or os.environ.get("JARVIS_CONFIG") or DEFAULT_CONFIG_PATH)
+    if not path and not os.environ.get("JARVIS_CONFIG"):
+        # First run from a packaged build: make sure a writable copy of the
+        # default config exists in the user data dir rather than inside the
+        # bundle (which may be read-only under Program Files).
+        config_path = ensure_user_config()
+    else:
+        config_path = Path(path or os.environ.get("JARVIS_CONFIG") or DEFAULT_CONFIG_PATH)
     if not config_path.exists():
         log.warning("config file %s not found - using built-in defaults", config_path)
         raw: Dict[str, object] = {}
@@ -242,7 +263,7 @@ def setup_logging(config: Dict[str, object]) -> None:
     stream.setFormatter(formatter)
     root.addHandler(stream)
 
-    log_dir = BASE_DIR / "logs"
+    log_dir = log_dir()
     handler_config = config.get("logging") or {}
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -860,13 +881,12 @@ class JarvisApp:
     )
 
     def _executable_path(self) -> str:
-        if getattr(sys, "frozen", False):
-            return sys.executable
-        return str(BASE_DIR / "main.py")
+        return entry_path()
 
     def _build_runtime(self) -> None:
         """Build Gemini, desktop/browser/camera controllers, planner and history."""
-        data_dir = Path(str(self.config.get("user_data_dir") or (BASE_DIR / "data")))
+        configured = str(self.config.get("user_data_dir") or "").strip()
+        data_dir = Path(os.path.expandvars(configured)) if configured else user_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir = data_dir
 
@@ -1285,10 +1305,14 @@ def run_check() -> int:
 
 
 def load_dotenv_file() -> None:
+    """Load .env from the user data dir or next to the application."""
+    env_path = find_dotenv()
+    if env_path is None:
+        return
     try:
         from dotenv import load_dotenv
 
-        load_dotenv(BASE_DIR / ".env")
+        load_dotenv(env_path)
     except Exception:  # pragma: no cover - dotenv missing or no .env file
         pass
 
@@ -1303,7 +1327,7 @@ def run_diagnostics_cli() -> int:
 
     report = run_diagnostics(
         config, executable=bool(getattr(sys, "frozen", False)),
-        executable_path=str(BASE_DIR / "main.py"),
+        executable_path=entry_path(),
     )
     for line in report.lines():
         print("  " + line)

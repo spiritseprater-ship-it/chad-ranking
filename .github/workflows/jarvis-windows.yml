@@ -3,8 +3,13 @@ name: JARVIS Windows build
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: jarvis-windows-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # ---------------------------------------------------------------- tests ----
@@ -24,67 +29,166 @@ jobs:
           python -m pip install PySide6 sounddevice numpy python-dotenv pytest
 
       - name: Run the test suite
+        working-directory: JARVIS
         run: python -m pytest tests -q
 
       - name: Environment check
+        working-directory: JARVIS
         run: python main.py --check
+
+      - name: Diagnostics
+        working-directory: JARVIS
+        run: python main.py --diagnostics
 
   # ---------------------------------------------------------------- build ----
   build:
     name: Windows EXE (onedir)
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install requirements
+      - name: Show the runner
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r JARVIS/requirements.txt
+          Write-Host "OS      : $([System.Environment]::OSVersion.VersionString)"
+          Write-Host "Arch     : $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+          python -c "import sys; print('Python  :', sys.version); print('Exe     :', sys.executable)"
 
-      - name: Run the test suite on Windows
-        working-directory: JARVIS
-        run: python -m pytest tests -q
-
-      - name: Build with PyInstaller
+      - name: Build (venv, tests, PyInstaller, zip)
         working-directory: JARVIS
         shell: pwsh
         run: |
-          $env:PYTHONIOENCODING = "utf-8"
-          python -m PyInstaller --noconfirm --clean JARVIS.spec
-          if (-not (Test-Path "dist\JARVIS\JARVIS.exe")) { throw "JARVIS.exe was not produced" }
+          # End-to-end run of the documented Windows build script. It creates a
+          # clean .venv, installs requirements.txt, runs the test suite, runs
+          # `main.py --check`, builds with PyInstaller and packages JARVIS-Windows.zip.
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python
+          if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed with exit code $LASTEXITCODE" }
 
-      - name: Report the build size
+      - name: Verify the zip contents
         working-directory: JARVIS
         shell: pwsh
         run: |
-          $exe = (Get-Item "dist\JARVIS\JARVIS.exe").Length
-          $dir = (Get-ChildItem "dist\JARVIS" -Recurse -File | Measure-Object -Property Length -Sum).Sum
-          Write-Host "JARVIS.exe : $([math]::Round($exe / 1MB, 2)) MB"
-          Write-Host "runtime    : $([math]::Round($dir / 1MB, 2)) MB"
+          $zip = ".\JARVIS-Windows.zip"
+          if (-not (Test-Path $zip)) { throw "JARVIS-Windows.zip was not produced" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))
+          try {
+              $names = $archive.Entries | ForEach-Object { $_.FullName }
+              Write-Host "Entries in $zip ($($names.Count)):"
+              $names | Select-Object -First 12 | ForEach-Object { Write-Host "  $_" }
+              Write-Host "  ... ($($names.Count - 12) more)"
+              if (-not ($names -contains "JARVIS/JARVIS.exe")) {
+                  throw "JARVIS.exe is missing from the zip"
+              }
+              foreach ($required in @("JARVIS/README.txt", "README.txt", "JARVIS/config.example.json", "JARVIS/uninstall.ps1", "JARVIS/.env.example")) {
+                  if (-not ($names -contains $required)) { throw "Required entry missing from the zip: $required" }
+              }
+          } finally { $archive.Dispose() }
 
-      - name: Smoke test (GUI must start and exit cleanly)
+      - name: Smoke test the packaged executable
         working-directory: JARVIS
         shell: pwsh
         run: |
-          # The first run shows the wizard; --check covers the non-GUI path.
-          python main.py --check
+          # The onedir launcher has no console, so the exit code is the signal.
+          $exe = ".\dist\JARVIS\JARVIS.exe"
+          if (-not (Test-Path $exe)) { throw "dist\JARVIS\JARVIS.exe not found" }
+          $proc = Start-Process -FilePath $exe -ArgumentList "--check" -PassThru -WindowStyle Hidden
+          if (-not $proc.WaitForExit(180000)) {
+              $proc.Kill(); throw "The packaged executable did not exit within 3 minutes"
+          }
+          Write-Host "Packaged --check exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) { throw "The packaged executable failed its smoke test" }
 
-      - name: Upload the application
-        uses: actions/upload-artifact@v4
-        with:
-          name: JARVIS-Windows
-          path: |
-            JARVIS/dist/JARVIS
-            JARVIS/README.txt
-          if-no-files-found: error
+      - name: Build report
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $exe   = (Get-Item ".\dist\JARVIS\JARVIS.exe").Length
+          $dir   = (Get-ChildItem ".\dist\JARVIS" -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          $zip   = (Get-Item ".\JARVIS-Windows.zip").Length
+          $py    = (& python -c "import sys; print(sys.version)") -join ""
+          $pi    = (& python -c "import PyInstaller; print(PyInstaller.__version__)") -join ""
+          $arch  = (& python -c "import platform; print(platform.machine(), platform.system())") -join ""
+          $lines = @(
+              "JARVIS Windows build report",
+              "Generated : $([DateTime]::UtcNow.ToString('o'))",
+              "Runner     : windows-latest ($env:RUNNER_OS)",
+              "Architecture: $arch",
+              "Python     : $py",
+              "PyInstaller: $pi",
+              "",
+              "Sizes",
+              ("  JARVIS.exe            {0:N2} MB ({1:N0} bytes)" -f ($exe / 1MB), $exe),
+              ("  runtime folder (onedir) {0:N2} MB ({1:N0} bytes)" -f ($dir / 1MB), $dir),
+              ("  JARVIS-Windows.zip     {0:N2} MB ({1:N0} bytes)" -f ($zip / 1MB), $zip),
+              "",
+              "Checksums",
+              (Get-FileHash ".\JARVIS-Windows.zip" -Algorithm SHA256 | Select-Object -ExpandProperty Hash),
+              "  JARVIS-Windows.zip",
+              (Get-FileHash ".\dist\JARVIS\JARVIS.exe" -Algorithm SHA256 | Select-Object -ExpandProperty Hash),
+              "  JARVIS.exe",
+              "",
+              "Note: onedir mode - JARVIS.exe needs the JARVIS folder next to it.",
+              "The full test suite ran inside build.ps1 and passed before packaging."
+          )
+          $lines | Set-Content -Path "..\build-report.txt" -Encoding UTF8
+          $lines | ForEach-Object { Write-Host $_ }
 
-      - name: Upload the downloadable zip
+      - name: Prepare artifacts
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "..\artifacts" -Force | Out-Null
+          Copy-Item ".\JARVIS-Windows.zip" "..\artifacts\JARVIS-Windows.zip" -Force
+          Copy-Item ".\dist\JARVIS\JARVIS.exe" "..\artifacts\JARVIS.exe" -Force
+          Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
+          Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
+
+      - name: Upload JARVIS-Windows.zip
         uses: actions/upload-artifact@v4
         with:
           name: JARVIS-Windows-zip
-          path: JARVIS/JARVIS-Windows.zip
-          if-no-files-found: ignore
+          path: artifacts/JARVIS-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload JARVIS.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-exe
+          path: artifacts/JARVIS.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build report
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-build-report
+          path: artifacts/build-report.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  # -------------------------------------------------------------- release ----
+  release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the build
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --target "$GITHUB_SHA" \
+            --title "JARVIS $GITHUB_REF_NAME" \
+            --notes-file release/build-report.txt \
+            release/JARVIS-Windows.zip release/JARVIS.exe

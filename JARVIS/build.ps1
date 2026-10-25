@@ -99,12 +99,65 @@ try {
         Write-Warning "The runtime folder is larger than the 50-100 MB target. See README.md for the size breakdown."
     }
 
+    Write-Step "Assembling the release folder"
+    # The zip is laid out so that extracting it gives a single JARVIS folder.
+    $ReleaseDir = Join-Path $Root "release"
+    if (Test-Path $ReleaseDir) { Remove-Item -Recurse -Force $ReleaseDir }
+    $ZipAppDir = Join-Path $ReleaseDir "JARVIS"
+    New-Item -ItemType Directory -Path $ZipAppDir -Force | Out-Null
+    Copy-Item -Path $AppDir -Destination $ZipAppDir -Recurse -Force
+
+    foreach ($file in @("README.txt", ".env.example", "requirements.txt", "uninstall.ps1")) {
+        $src = Join-Path $Root $file
+        if (Test-Path $src) { Copy-Item -Path $src -Destination $ZipAppDir -Force }
+    }
+    # config template: the live config is created in the per-user data folder on
+    # first run, so the application folder itself stays read-only if needed.
+    $template = Join-Path $Root "config.json"
+    if (Test-Path $template) {
+        Copy-Item -Path $template -Destination (Join-Path $ZipAppDir "config.example.json") -Force
+    }
+
+    # Convenience launcher: double-clicking opens the app from any location.
+    $bat = @"
+@echo off
+title JARVIS
+cd /d "%~dp0"
+"%~dp0JARVIS.exe"
+"@
+    Set-Content -Path (Join-Path $ZipAppDir "launch.bat") -Value $bat -Encoding ASCII
+
+    $topReadme = @"
+JARVIS - Windows 11 desktop assistant
+=====================================
+
+1. Extract this zip anywhere (for example C:\Users\<name>\JARVIS).
+2. Open the JARVIS folder and double-click JARVIS.exe (or launch.bat).
+3. On first run you will be asked for a Gemini API key, or you can add it to
+   %LOCALAPPDATA%\JARVIS\.env as GEMINI_API_KEY=...
+4. See JARVIS\README.txt for the full guide.
+
+Safety: press Ctrl+Alt+J at any time to stop JARVIS instantly. The key never
+leaves your PC except to Google's Gemini endpoint.
+"@
+    Set-Content -Path (Join-Path $ReleaseDir "README.txt") -Value $topReadme -Encoding UTF8
+
     Write-Step "Packaging JARVIS-Windows.zip"
     $zipPath = Join-Path $Root "JARVIS-Windows.zip"
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
-    Compress-Archive -Path $AppDir -DestinationPath $zipPath -Force
+    Compress-Archive -Path (Join-Path $ReleaseDir "*") -DestinationPath $zipPath -Force
     $zipSize = (Get-Item $zipPath).Length
     Write-Host ("  JARVIS-Windows.zip  : {0:N2} MB" -f ($zipSize / 1MB))
+
+    # SHA-256 manifest so the download can be verified
+    $sha = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash
+    $exeHash = (Get-FileHash -Path (Join-Path $AppDir "JARVIS.exe") -Algorithm SHA256).Hash
+    Set-Content -Path (Join-Path $ReleaseDir "SHA256SUMS.txt") -Encoding ASCII -Value @(
+        "{0}  JARVIS-Windows.zip" -f $sha,
+        "{0}  JARVIS\JARVIS.exe" -f $exeHash
+    )
+    Copy-Item -Path (Join-Path $ReleaseDir "SHA256SUMS.txt") -Destination $Root -Force
+    Write-Host ("  SHA256 (zip)         : {0}" -f $sha)
 
     Write-Host ""
     Write-Host "DONE." -ForegroundColor Green

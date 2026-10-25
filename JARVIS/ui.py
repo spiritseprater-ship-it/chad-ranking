@@ -33,6 +33,7 @@ from PySide6.QtGui import (
     QPainter,
     QPixmap,
 )
+from paths import resource_path, user_data_dir
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -108,8 +109,9 @@ STATE_COLORS: Dict[str, str] = {
     "ERROR": "#c0392b",
 }
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-GENERATED_DIR = os.path.join(ASSETS_DIR, "generated")
+# bundled read-only assets, and the writable folder for generated icons
+ASSETS_DIR = str(resource_path("assets"))
+GENERATED_DIR = str(user_data_dir() / "assets" / "generated")
 ICON_PATH = os.path.join(GENERATED_DIR, "jarvis_icon.png")
 
 

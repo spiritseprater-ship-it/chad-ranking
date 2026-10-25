@@ -79,7 +79,7 @@ jobs:
 
       # Each phase runs as its own step: the failed step's name says which
       # stage broke, which matters because the run log itself is not reachable.
-      - name: Build phase 1 - venv and requirements
+      - name: Build phase 1 - Python check and venv
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -87,7 +87,15 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt
           if ($LASTEXITCODE -ne 0) { throw "setup phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 2 - test suite
+      - name: Build phase 2 - pip install requirements
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase install *>&1 |
+              Tee-Object -FilePath ..\build-log.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "install phase failed with exit code $LASTEXITCODE" }
+
+      - name: Build phase 3 - test suite
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -95,7 +103,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "test phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 3 - environment check
+      - name: Build phase 4 - environment check
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -103,7 +111,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "check phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 4 - PyInstaller
+      - name: Build phase 5 - PyInstaller
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -111,7 +119,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 5 - package the zip
+      - name: Build phase 6 - package the zip
         working-directory: JARVIS
         shell: pwsh
         run: |

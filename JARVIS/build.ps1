@@ -27,7 +27,7 @@ param(
     [switch]$SkipTests,
     # Run one stage at a time. CI calls these individually so a failure is
     # reported as the stage it happened in; the default runs everything.
-    [ValidateSet("all", "setup", "test", "check", "build", "package")]
+    [ValidateSet("all", "setup", "install", "test", "check", "build", "package")]
     [string]$Phase = "all",
     [string]$Python = "python",
     [string]$OutputDir = "dist"
@@ -66,7 +66,9 @@ try {
         Write-Step "Creating a clean virtual environment (.venv)"
         & $Python -m venv .venv
         if ($LASTEXITCODE -ne 0) { Fail "Could not create the virtual environment." }
+    }
 
+    if ($Phase -in @("all", "install")) {
         Write-Step "Installing requirements"
         & $VenvPython -m pip install --upgrade pip
         & $VenvPython -m pip install -r requirements.txt

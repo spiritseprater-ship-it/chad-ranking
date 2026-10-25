@@ -2,7 +2,9 @@ name: JARVIS Windows build
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "arena/*"      # delivery build branches
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

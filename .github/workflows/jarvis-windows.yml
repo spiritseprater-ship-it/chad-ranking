@@ -73,18 +73,47 @@ jobs:
           Write-Host "Arch     : $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
           python -c "import sys; print('Python  :', sys.version); print('Exe     :', sys.executable)"
 
-      - name: Build (venv, tests, PyInstaller, zip)
+      # Each phase runs as its own step: the failed step's name says which
+      # stage broke, which matters because the run log itself is not reachable.
+      - name: Build phase 1 - venv and requirements
         working-directory: JARVIS
         shell: pwsh
         run: |
-          # End-to-end run of the documented Windows build script. It creates a
-          # clean .venv, installs requirements.txt, runs the test suite, runs
-          # `main.py --check`, builds with PyInstaller and packages JARVIS-Windows.zip.
-          # keep the whole build output so a failure can be read even when the
-          # run log endpoint is unreachable
-          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python *>&1 |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase setup *>&1 |
               Tee-Object -FilePath ..\build-log.txt
-          if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "setup phase failed with exit code $LASTEXITCODE" }
+
+      - name: Build phase 2 - test suite
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase test *>&1 |
+              Tee-Object -FilePath ..\build-log.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "test phase failed with exit code $LASTEXITCODE" }
+
+      - name: Build phase 3 - environment check
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase check *>&1 |
+              Tee-Object -FilePath ..\build-log.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "check phase failed with exit code $LASTEXITCODE" }
+
+      - name: Build phase 4 - PyInstaller
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase build *>&1 |
+              Tee-Object -FilePath ..\build-log.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller phase failed with exit code $LASTEXITCODE" }
+
+      - name: Build phase 5 - package the zip
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase package *>&1 |
+              Tee-Object -FilePath ..\build-log.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "packaging phase failed with exit code $LASTEXITCODE" }
 
       - name: Verify the zip contents
         working-directory: JARVIS

@@ -166,6 +166,7 @@ jobs:
         # Run logs and artifacts live on hosts this environment cannot reach,
         # so a tag on the branch makes the log readable through the GitHub API.
         if: always()
+        working-directory: JARVIS
         shell: pwsh
         run: |
           $log = "..\build-log.txt"

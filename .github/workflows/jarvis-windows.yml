@@ -544,6 +544,42 @@ jobs:
           Write-Host "not present"; exit 1
 
 
+      - name: Diag - PyInstaller windowed bootloader present
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $p = ".\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe"
+          if (Test-Path $p) { Write-Host "runw.exe present"; exit 0 }
+          Write-Host "runw.exe MISSING"; exit 1
+      - name: Diag - PyInstaller console bootloader present
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $p = ".\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe"
+          if (Test-Path $p) { Write-Host "run.exe present"; exit 0 }
+          Write-Host "run.exe MISSING"; exit 1
+      - name: Diag - list the bootloader directory
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $d = ".\.venv\Lib\site-packages\PyInstaller\bootloader"
+          if (Test-Path $d) { Get-ChildItem $d -Recurse -File | Select-Object -ExpandProperty Name }
+          Write-Host "--- end listing ---"
+      - name: Diag - variant [console=True]
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $src = Get-Content JARVIS.spec -Raw -Encoding UTF8
+          $variant = $src -replace "console=False", "console=True"
+          Set-Content -Path JARVIS-variant.spec -Value $variant -Encoding UTF8
+          & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --distpath dist-c --workpath build-c JARVIS-variant.spec *>&1 | Out-Null
+          if (Test-Path "dist-c\JARVIS\JARVIS.exe") { Write-Host "console build succeeded"; exit 0 }
+          Write-Host "console build failed"; exit 1
+
       - name: Build phase 7 - package the zip
         if: always()
         working-directory: JARVIS

@@ -51,7 +51,7 @@ python main.py                   # normal launch
 python main.py --check           # environment/dependency report
 python main.py --diagnostics     # full self-diagnostic report
 python main.py --config other.json
-python -m pytest tests -q        # 247 tests
+python -m pytest tests -q        # 255 tests
 ```
 
 ---
@@ -176,7 +176,7 @@ GitHub Actions runs the same build on `windows-latest` and uploads the artifact
 ## 8. Tests
 
 ```powershell
-python -m pytest tests -q        # 247 passed, 1 skipped
+python -m pytest tests -q        # 255 passed, 1 skipped
 ```
 
 | File | Covers |
@@ -190,6 +190,7 @@ python -m pytest tests -q        # 247 passed, 1 skipped
 | `test_browser.py` | provider mapping, tab state, error paths |
 | `test_orb.py` | palettes, particle maths, transitions |
 | `test_planner.py` | chaining, validation, cancellation, history |
+| `test_integration.py` | Router + planner + registry + Phase 1 engine together |
 
 Everything that needs Windows, a GUI, a browser or a camera is either
 parameterised or skipped: the suite runs green on Linux CI.

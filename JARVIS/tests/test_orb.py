@@ -191,10 +191,13 @@ def test_widget_creation_is_lazy_and_reports_qt(qt_app) -> None:  # noqa: ARG001
         widget.set_tray(False)
         widget.set_low_resource(False)
 
-        # paintEvent is the risky part: rasterise the widget and check it drew
+        # paintEvent is the risky part: rasterise the widget and read back the
+        # pixels, which proves the orb actually drew rather than just existing
         image = widget.grab()
         assert image.width() > 0 and image.height() > 0
-        assert image.constBits() is not None
+        raster = image.toImage()
+        assert raster.width() > 0 and raster.height() > 0
+        assert raster.constBits() is not None
     finally:
         widget.deleteLater()
 

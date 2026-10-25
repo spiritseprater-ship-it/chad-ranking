@@ -39,7 +39,12 @@ jobs:
 
       - name: Run the test suite
         working-directory: JARVIS
-        run: python -m pytest tests -q
+        shell: bash
+        run: |
+          set -o pipefail
+          # keep the full output as an artifact so a failure is debuggable even
+          # when the run log itself cannot be downloaded
+          python -m pytest tests -q 2>&1 | tee ../pytest-output.txt
 
       - name: Environment check
         working-directory: JARVIS
@@ -153,6 +158,14 @@ jobs:
           Copy-Item ".\dist\JARVIS\JARVIS.exe" "..\artifacts\JARVIS.exe" -Force
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
+
+      - name: Upload the test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-pytest-output
+          path: pytest-output.txt
+          if-no-files-found: ignore
 
       - name: Upload JARVIS-Windows.zip
         uses: actions/upload-artifact@v4

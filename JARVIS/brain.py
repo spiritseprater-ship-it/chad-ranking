@@ -39,6 +39,13 @@ __all__ = [
     "parse_number",
     "normalize_text",
     "KNOWN_COMMANDS",
+    "TASK_SPECS",
+    "ALWAYS_LOCAL_COMMANDS",
+    "AI_REQUEST_PATTERNS",
+    "looks_like_ai_request",
+    "strip_wake_word",
+    "RouteDecision",
+    "Router",
     "strip_noise",
 ]
 
@@ -522,8 +529,13 @@ FILE_SPECS: Tuple[CommandSpec, ...] = (
         patterns=(
             r"\bopen\s+(?:the\s+)?app(?:lication)?\s+(.+)$",
             r"\bopen\s+(?:the\s+)?(.+?)\s+app(?:lication)?\b",
-            r"\blaunch\s+(?:the\s+)?(.+)$",
-            r"\brun\s+(?:the\s+)?(.+)$",
+            r"\blaunch\s+(?!.*\b(?:self|diagnostic|check|status|health)\b)(?:the\s+)?(.+)$",
+            r"\brun\s+(?!.*\b(?:self|diagnostic|check|status|health)\b)(?:the\s+)?(.+)$",
+            r"\bopen\s+(?:the\s+)?(?:youtube|gmail|maps|docs|calendar|spotify|netflix|chatgpt)\b",
+            r"\bopen\s+(?:the\s+)?browser\b",
+            r"\bopen\s+(?:the\s+)?app(?:lication)?\b",
+            r"\blaunch\s+(?:the\s+)?app(?:lication)?\b",
+            r"\bkholo\b", r"\bapplication\s+kholo\b",
         ),
         slot_patterns={"app": r"(.+)$"},
         slot_noise={"app": ("app", "application", "the", "please", "open", "launch", "run")},
@@ -721,8 +733,82 @@ INPUT_SPECS: Tuple[CommandSpec, ...] = (
     ),
 )
 
+# --- task control: cancel, history, diagnostics, resource mode --------------
+
+TASK_SPECS: Tuple[CommandSpec, ...] = (
+    CommandSpec(
+        id="cancel_task",
+        name="Cancel current task",
+        patterns=(
+            r"\bcancel\b", r"\bcancelled\b", r"\bcanceled\b", r"\babort\b", r"\baborted\b",
+            r"\bstop\s+(?:that|this|it|everything|all|the\s+task)?\b",
+            r"\bstop\s+(?:karo|kar|rao)\b",
+            r"\bcance\w*\s+(?:the\s+)?(?:task|job|everything|all)\b",
+            r"\b(?:please\s+)?cancel\s+(?:the\s+)?(?:task|job|everything|all)\b",
+            r"\b(?:na\s+)?karo\b.*\bcancel\b",
+            r"\b(?:ruk\s+ja|theek\s+hai\s+ruk\s+ja)\b",
+            r"\b(?:bas\s+karo|ruko)\b",
+        ),
+        keywords=("cancel", "abort"),
+        min_keyword_hits=1,
+        priority=44,
+        examples=("Cancel", "Cancel everything", "Cancel the task", "Ruk ja"),
+    ),
+    CommandSpec(
+        id="task_history",
+        name="Show task history",
+        patterns=(
+            r"\b(?:what|which)\s+(?:did\s+i|have\s+i)\s+(?:ask|tell|request)",
+            r"\b(?:my|the)\s+task\s+history\b",
+            r"\b(?:show|tell|list|open)\s+(?:my\s+)?(?:task\s+)?history\b",
+            r"\bprevious\s+tasks\b", r"\bpast\s+tasks\b",
+            r"\bhistory\b",
+            r"\bak\s+kya\s+kar\w+\b", r"\bkar\w+\b.*\bhistory\b",
+            r"\b(?:pichh\w*|pehle\w*)\s+(?:kar\w+\s+)?\b(?:kya\s+tha|kya\s+hai)\b",
+        ),
+        keywords=("history", "previous", "task"),
+        min_keyword_hits=1,
+        priority=45,
+        examples=("Show task history", "What did I ask you?", "Pichhle kaam kya the"),
+    ),
+    CommandSpec(
+        id="self_diagnostics",
+        name="Run self diagnostics",
+        patterns=(
+            r"\bcheck\s+(?:my|the)\s+jarvis\b", r"\bjarvis\s+(?:check|self\s*test|diagnostic)\b",
+            r"\bself\s*(?:check|test|diagnostics?)\b", r"\bdiagnos\w+\b",
+            r"\brun\s+(?:a\s+)?(?:self\s*)?(?:check|test|diagnostics?)\b",
+            r"\bhealth\s+check\b", r"\bstatus\s+check\b", r"\bcheck\s+status\b",
+            r"\bcheck\s+my\b", r"\bcheck\s+(?:jarvis|system|status|health)\b",
+            r"\bcheck\b",
+            r"\bsystem\s+status\b", r"\bkya\s+chaal\w+\b", r"\bhealth\b",
+        ),
+        keywords=("diagnos", "self test", "status", "health", "check"),
+        min_keyword_hits=1,
+        priority=46,
+        examples=("Check my JARVIS", "Run self diagnostics", "Jarvis status"),
+    ),
+    CommandSpec(
+        id="low_resource_mode",
+        name="Toggle low resource mode",
+        patterns=(
+            r"\blow\s+(?:resource|power|performance)\s+mode\b",
+            r"\blow\s+power\s+mode\b", r"\bbattery\s+saver\b",
+            r"\buse\s+less\s+(?:ram|cpu|memory)\b",
+            r"\bsave\s+(?:resources|ram|memory|battery)\b",
+            r"\bkam\s+(?:resources|ram|memory|battery)\s+use\b",
+            r"\b(?:low|kam)\s+resources\b",
+            r"\b(?:standard|normal)\s+mode\b",
+        ),
+        keywords=("low", "resources", "battery", "ram"),
+        min_keyword_hits=1,
+        priority=47,
+        examples=("Turn on low resource mode", "Use less RAM", "Standard mode"),
+    ),
+)
+
 KNOWN_COMMANDS: Tuple[CommandSpec, ...] = (
-    LIFECYCLE_SPECS + WEB_SPECS + FILE_SPECS + SYSTEM_SPECS + INPUT_SPECS
+    LIFECYCLE_SPECS + WEB_SPECS + FILE_SPECS + SYSTEM_SPECS + INPUT_SPECS + TASK_SPECS
 )
 
 _SPEC_BY_ID: Dict[str, CommandSpec] = {s.id: s for s in KNOWN_COMMANDS}
@@ -869,3 +955,183 @@ class Brain:
             if value:
                 slots[slot] = value
         return slots
+
+
+# ---------------------------------------------------------------------------
+# hybrid routing: local command vs Gemini
+# ---------------------------------------------------------------------------
+
+#: commands that must never be sent to the AI (safety + offline guarantees)
+ALWAYS_LOCAL_COMMANDS = frozenset({
+    "exit_jarvis", "mute", "unmute", "cancel_task", "task_history",
+    "self_diagnostics", "low_resource_mode", "scroll", "scroll_down", "scroll_up",
+    "scroll_unknown", "volume_up", "volume_down", "set_volume", "wake_word",
+})
+
+#: patterns that mean "this is an informational or generative request" and are
+#: better answered by the AI than by the local command table
+AI_REQUEST_PATTERNS: Tuple[str, ...] = (
+    r"\b(?:what|why|how|when|where|who|which|whose|whether)\b",
+    r"\b(?:explain|describe|summarise|summarize|tell\s+me\s+about)\b",
+    r"\bhow\s+(?:do|can|could|to|would|i\s+can)\b",
+    r"\b(?:can|could|would|will|shall)\s+you\s+(?:help|plan|create|draft|write|find|research)\b",
+    r"\bhelp\s+me\s+(?:with|plan|find|understand|write|draft)\b",
+    r"\b(?:plan|prepare|draft|write|create|research)\s+(?:a|an|the|my|us)\b",
+    r"\b(?:list|recommend|suggest|compare|review)\b.*\b(?:for|to|me|me\s+the)\b",
+    r"\bcheck\b.*\b(?:weather|temperature|rate|price|prices|stock|shares|news|update|"
+    r"release|flight|bus|train|match|score|list|review|details?)\b",
+    r"\bkya\b.*(\?|hai)",
+    r"\bkaise\b",
+    r"\b(?:batao|kaho)\b",
+)
+
+_AI_PATTERN_CACHE: Optional[Tuple[re.Pattern, ...]] = None
+
+
+def _ai_patterns() -> Tuple[re.Pattern, ...]:
+    global _AI_PATTERN_CACHE
+    if _AI_PATTERN_CACHE is None:
+        _AI_PATTERN_CACHE = tuple(re.compile(p, re.IGNORECASE) for p in AI_REQUEST_PATTERNS)
+    return _AI_PATTERN_CACHE
+
+
+def looks_like_ai_request(text: str) -> bool:
+    """True when the utterance is a conversational/informational request."""
+    norm, _meta = normalize_text(text)
+    if not norm.strip():
+        return False
+    return any(pattern.search(norm) for pattern in _ai_patterns())
+
+
+def strip_wake_word(text: str, wake_words: Sequence[str]) -> str:
+    """Remove a leading wake word (and trailing politeness) from an utterance."""
+    norm, meta = normalize_text(text)
+    value = norm.strip()
+    for wake in wake_words:
+        # read the token from the raw string: normalize_text() strips the wake
+        # word itself, so it cannot be used to rebuild it
+        token = str(wake or "").strip().lower()
+        if not token:
+            continue
+        pattern = re.compile(
+            rf"^{re.escape(token)}\b[,\s]*", re.IGNORECASE
+        )
+        if pattern.search(value):
+            value = pattern.sub("", value).strip()
+            break
+    if not value:
+        # the whole utterance was the wake word: fall back to the raw text with
+        # the wake word removed rather than returning it unchanged
+        raw = meta["raw"].strip()
+        for wake in wake_words:
+            token = str(wake or "").strip().lower()
+            if token and raw.lower().startswith(token):
+                raw = raw[len(token):].strip(" ,")
+                break
+        return raw
+
+    for filler in ("please", "hey", "okay", "ok", "yar", "bhai", "sir", "madam", "na"):
+        value = re.sub(rf"^{re.escape(filler)}\s+(?:na\s+)?", "", value, flags=re.IGNORECASE).strip()
+    return value
+
+
+@dataclass
+class RouteDecision:
+    """Outcome of routing one utterance to the right handler."""
+
+    kind: str  # "local" | "ai" | "cancel" | "unknown"
+    text: str
+    command: Optional[ParsedCommand] = None
+    reason: str = ""
+    needs_ai: bool = False
+
+    @property
+    def command_id(self) -> Optional[str]:
+        return self.command.command if self.command else None
+
+    @property
+    def label(self) -> str:
+        if self.command is not None:
+            return self.command.label
+        return {"local": "Local command", "ai": "AI conversation",
+                "cancel": "Cancel", "unknown": "Unrecognized"}.get(self.kind, self.kind)
+
+
+class Router:
+    """Decide local-command vs Gemini-conversation for one utterance.
+
+    Local matching always runs first (and always wins for lifecycle, safety and
+    system controls so JARVIS keeps working when Gemini is unavailable).  Only
+    utterances that the local brain does not recognise are offered to the AI.
+    """
+
+    #: confidence at or above which a local match is always accepted
+    LOCAL_ACCEPT_SCORE = Brain.ACCEPT_SCORE
+
+    def __init__(
+        self,
+        brain: Optional[Brain] = None,
+        ai_enabled: bool = False,
+        ai_available: bool = False,
+        wake_words: Sequence[str] = ("jarvis",),
+        always_local_extra: Sequence[str] = (),
+    ) -> None:
+        self.brain = brain or Brain()
+        self.ai_enabled = bool(ai_enabled)
+        self.ai_available = bool(ai_available)
+        self.wake_words = list(wake_words)
+        self.always_local = frozenset(ALWAYS_LOCAL_COMMANDS | set(always_local_extra))
+
+    @property
+    def ai_capable(self) -> bool:
+        return bool(self.ai_enabled and self.ai_available)
+
+    def route(self, text: str) -> RouteDecision:
+        cleaned = strip_wake_word(text, self.wake_words)
+        if not cleaned.strip():
+            return RouteDecision(kind="unknown", text=cleaned, reason="Empty utterance.")
+
+        parsed = self.brain.parse(cleaned)
+
+        # "check ..." is diagnostics only when it is not an informational request
+        # ("check the weather in Mumbai" must not become a health check), so the
+        # guard runs before local acceptance.
+        if parsed is not None and parsed.command == "self_diagnostics" and looks_like_ai_request(cleaned):
+            parsed = None
+
+        # 1. local command, or a lifecycle/safety command even when the score
+        #    is borderline (these must never depend on the cloud)
+        if parsed is not None:
+            if parsed.command in self.always_local or parsed.confidence >= self.LOCAL_ACCEPT_SCORE:
+                kind = "cancel" if parsed.command == "cancel_task" else "local"
+                return RouteDecision(
+                    kind=kind, text=cleaned, command=parsed, reason="Matched a local command."
+                )
+
+        # 2. conversational request -> the AI
+        if looks_like_ai_request(cleaned):
+            if self.ai_capable:
+                return RouteDecision(
+                    kind="ai", text=cleaned, reason="Informational request handled by Gemini."
+                )
+            return RouteDecision(
+                kind="unknown", text=cleaned,
+                reason="Gemini is not available - add an API key in Settings.",
+            )
+
+        # 3. unknown: only fall back to the AI when it is available, otherwise ask
+        if self.ai_capable:
+            return RouteDecision(
+                kind="ai", text=cleaned, reason="No local match; asking Gemini."
+            )
+        return RouteDecision(
+            kind="unknown", text=cleaned, reason="Could not understand that locally."
+        )
+
+    def describe_capabilities(self) -> str:
+        lines = [
+            f"Local commands understood: {len(self.brain.commands)}",
+            f"Gemini conversation: {'ready' if self.ai_capable else 'not configured'}",
+            f"Wake word: {', '.join(self.wake_words) if self.wake_words else 'disabled'}",
+        ]
+        return "\n".join(lines)

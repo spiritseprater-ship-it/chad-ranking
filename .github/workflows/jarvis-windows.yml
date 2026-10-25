@@ -1,0 +1,90 @@
+name: JARVIS Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------- tests ----
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install core + test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PySide6 sounddevice numpy python-dotenv pytest
+
+      - name: Run the test suite
+        run: python -m pytest tests -q
+
+      - name: Environment check
+        run: python main.py --check
+
+  # ---------------------------------------------------------------- build ----
+  build:
+    name: Windows EXE (onedir)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r JARVIS/requirements.txt
+
+      - name: Run the test suite on Windows
+        working-directory: JARVIS
+        run: python -m pytest tests -q
+
+      - name: Build with PyInstaller
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = "utf-8"
+          python -m PyInstaller --noconfirm --clean JARVIS.spec
+          if (-not (Test-Path "dist\JARVIS\JARVIS.exe")) { throw "JARVIS.exe was not produced" }
+
+      - name: Report the build size
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $exe = (Get-Item "dist\JARVIS\JARVIS.exe").Length
+          $dir = (Get-ChildItem "dist\JARVIS" -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Host "JARVIS.exe : $([math]::Round($exe / 1MB, 2)) MB"
+          Write-Host "runtime    : $([math]::Round($dir / 1MB, 2)) MB"
+
+      - name: Smoke test (GUI must start and exit cleanly)
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          # The first run shows the wizard; --check covers the non-GUI path.
+          python main.py --check
+
+      - name: Upload the application
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Windows
+          path: |
+            JARVIS/dist/JARVIS
+            JARVIS/README.txt
+          if-no-files-found: error
+
+      - name: Upload the downloadable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Windows-zip
+          path: JARVIS/JARVIS-Windows.zip
+          if-no-files-found: ignore

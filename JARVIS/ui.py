@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from PySide6.QtCore import QPoint, Qt, Signal
@@ -54,6 +55,50 @@ from PySide6.QtWidgets import (
 )
 
 log = logging.getLogger("jarvis.ui")
+
+#: one-line description of each automation tool (also used by the settings dialog)
+TOOL_DESCRIPTIONS: Dict[str, str] = {
+    "open_application": "launch an installed app by name",
+    "search_files": "find files on this PC",
+    "open_file": "open a file or folder",
+    "search_web": "search the web in the browser",
+    "browser_open_url": "open a web address",
+    "browser_search": "search the web",
+    "browser_open_result": "open a search result by number",
+    "browser_extract_text": "read the text of the open page",
+    "browser_navigate": "go to a web address",
+    "browser_scroll": "scroll the open page",
+    "browser_tabs": "list browser tabs",
+    "browser_activate_tab": "focus a browser tab",
+    "take_screenshot": "capture the screen (needs confirmation)",
+    "get_system_status": "list windows and the active window",
+    "window_list": "list visible windows",
+    "window_focus": "bring a window to the front",
+    "window_minimize": "minimize a window",
+    "window_maximize": "maximize a window",
+    "window_close": "close a window (needs confirmation)",
+    "mouse_click": "click on screen (needs confirmation)",
+    "mouse_drag": "drag on screen (needs confirmation)",
+    "keyboard_type": "type text (needs confirmation)",
+    "keyboard_shortcut": "press a key combination (needs confirmation)",
+    "file_create_folder": "create a folder",
+    "file_rename": "rename a file (needs confirmation)",
+    "file_copy": "copy a file",
+    "file_move": "move a file (needs confirmation)",
+    "file_delete": "delete a file (needs confirmation)",
+    "read_document": "read a text document",
+    "camera_photo": "take a webcam photo (needs confirmation)",
+    "summarize_page": "summarise the open page with Gemini",
+}
+
+#: the safe default set for a standard install
+RECOMMENDED_TOOLS = frozenset({
+    "open_application", "search_files", "open_file", "search_web",
+    "browser_open_url", "browser_search", "browser_extract_text", "browser_navigate",
+    "browser_scroll", "browser_tabs", "take_screenshot", "get_system_status",
+    "window_list", "window_focus", "window_minimize", "window_maximize",
+    "file_create_folder", "file_copy", "read_document", "summarize_page",
+})
 
 STATE_COLORS: Dict[str, str] = {
     "STANDBY": "#8a8f98",
@@ -124,6 +169,8 @@ class SettingsDialog(QDialog):
         voice = config.get("voice", {}) or {}
         conversation = config.get("conversation", {}) or {}
         browser = config.get("browser", {}) or {}
+        gemini = config.get("gemini", {}) or {}
+        tools = config.get("tools", {}) or {}
         mic_cfg = speech.get("microphone", {}) or {}
 
         self.wake_primary = QLineEdit(str(wake.get("primary", "hey_jarvis")))
@@ -159,6 +206,49 @@ class SettingsDialog(QDialog):
         self.browser.setCurrentText(str(browser.get("default", "chrome")))
         self.search_url = QLineEdit(str(browser.get("search_url", "")))
 
+        # --- Gemini -------------------------------------------------------
+        self.gemini_enabled = QCheckBox("Use Gemini for conversation and tasks")
+        self.gemini_enabled.setChecked(bool(gemini.get("enabled", True)))
+        self.gemini_key = QLineEdit()
+        self.gemini_key.setEchoMode(QLineEdit.Password)
+        self.gemini_key.setPlaceholderText("leave empty to use the stored key")
+        if gemini.get("api_key"):
+            self.gemini_key.setText(str(gemini["api_key"]))
+        self.gemini_model = QLineEdit(str(gemini.get("model") or "gemini-3.8-flash"))
+        self.gemini_model.setPlaceholderText("gemini-3.8-flash (see the README for the current list)")
+        key_button = QPushButton("Store key in your profile")
+        key_button.clicked.connect(self._store_key)
+
+        # --- tools --------------------------------------------------------
+        self.tool_boxes: Dict[str, QCheckBox] = {}
+        tools_layout = QVBoxLayout()
+        self.tool_layout = tools_layout
+        enabled_tools = set(tools.get("enabled") or [])
+        for tool_name, description in sorted(TOOL_DESCRIPTIONS.items()):
+            box = QCheckBox(f"{tool_name} - {description}")
+            box.setChecked(tool_name in enabled_tools)
+            self.tool_boxes[tool_name] = box
+            tools_layout.addWidget(box)
+        self.all_tools_button = QPushButton("Enable every tool")
+        self.all_tools_button.clicked.connect(
+            lambda: [box.setChecked(True) for box in self.tool_boxes.values()]
+        )
+        self.recommended_button = QPushButton("Recommended set only")
+        self.recommended_button.clicked.connect(
+            lambda: [
+                box.setChecked(tool_name in RECOMMENDED_TOOLS)
+                for tool_name, box in self.tool_boxes.items()
+            ]
+        )
+
+        # --- interface ---------------------------------------------------
+        self.startup_box = QCheckBox("Launch JARVIS when Windows starts")
+        self.startup_box.setChecked(bool((config.get("ui") or {}).get("startup", False)))
+        self.low_resource_box = QCheckBox("Low resource mode (fewer orb particles)")
+        self.low_resource_box.setChecked(bool((config.get("ui") or {}).get("low_resource", False)))
+        self.compact_box = QCheckBox("Compact window")
+        self.compact_box.setChecked(bool((config.get("ui") or {}).get("compact", False)))
+
         self.mic = QComboBox()
         self.mic.addItem("(system default)", None)
         for device in self._devices():
@@ -190,6 +280,20 @@ class SettingsDialog(QDialog):
         form.addRow("Search URL", self.search_url)
         form.addRow("Microphone", self.mic)
 
+        form.addRow("Gemini", self.gemini_enabled)
+        form.addRow("Gemini key", self.gemini_key)
+        form.addRow("", key_button)
+        form.addRow("Gemini model", self.gemini_model)
+        tools_box = QGroupBox("Automation tools")
+        tools_inner = QVBoxLayout(tools_box)
+        tools_inner.addLayout(tools_layout)
+        tools_inner.addWidget(self.all_tools_button)
+        tools_inner.addWidget(self.recommended_button)
+        form.addRow("Tools", tools_box)
+        form.addRow("Startup", self.startup_box)
+        form.addRow("Interface", self.low_resource_box)
+        form.addRow("", self.compact_box)
+
         layout = QVBoxLayout(self)
         layout.addLayout(form)
 
@@ -207,6 +311,31 @@ class SettingsDialog(QDialog):
         except Exception as exc:  # pragma: no cover - audio lib missing
             log.warning("could not list microphones: %s", exc)
             return []
+
+    def _store_key(self) -> None:
+        key = self.gemini_key.text().strip()
+        if not key:
+            QMessageBox.information(
+                self, "JARVIS",
+                "Paste a Google AI Studio API key first. It is stored in "
+                "%USERPROFILE%\\.jarvis\\gemini_key.txt and never written to config.json."
+            )
+            return
+        try:
+            path = Path.home() / ".jarvis" / "gemini_key.txt"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(key, encoding="utf-8")
+            os.chmod(str(path), 0o600)
+            self.gemini_key.clear()
+            self.append_log_status("Gemini key stored in your profile.")
+            QMessageBox.information(
+                self, "JARVIS", f"Key stored at {path}. It is never logged or shared."
+            )
+        except OSError as exc:
+            QMessageBox.critical(self, "JARVIS", f"Could not store the key: {exc}")
+
+    def append_log_status(self, message: str) -> None:
+        log.info(message)
 
     def _list_voices(self) -> None:
         dialog = QDialog(self)
@@ -255,6 +384,25 @@ class SettingsDialog(QDialog):
         voice["volume"] = self.volume.value()
         config["voice"] = voice
 
+        gemini = dict(config.get("gemini", {}) or {})
+        gemini["enabled"] = self.gemini_enabled.isChecked()
+        gemini["model"] = self.gemini_model.text().strip() or "gemini-3.8-flash"
+        if self.gemini_key.text().strip():
+            gemini["api_key"] = self.gemini_key.text().strip()
+        config["gemini"] = gemini
+
+        tools = dict(config.get("tools", {}) or {})
+        tools["enabled"] = sorted(
+            name for name, box in self.tool_boxes.items() if box.isChecked()
+        )
+        config["tools"] = tools
+
+        ui_cfg = dict(config.get("ui", {}) or {})
+        ui_cfg["startup"] = self.startup_box.isChecked()
+        ui_cfg["low_resource"] = self.low_resource_box.isChecked()
+        ui_cfg["compact"] = self.compact_box.isChecked()
+        config["ui"] = ui_cfg
+
         browser = dict(config.get("browser", {}) or {})
         browser["default"] = self.browser.currentText()
         browser["search_url"] = self.search_url.text().strip() or browser.get(
@@ -262,8 +410,9 @@ class SettingsDialog(QDialog):
         )
         config["browser"] = browser
 
+        config_path = Path(str(config.get("_path") or (os.path.dirname(os.path.abspath(__file__)) / "config.json")))
         try:
-            with open("config.json", "w", encoding="utf-8") as handle:
+            with open(config_path, "w", encoding="utf-8") as handle:
                 json.dump(config, handle, indent=2, ensure_ascii=False)
         except OSError as exc:
             QMessageBox.critical(self, "JARVIS", f"Could not save config.json: {exc}")
@@ -289,6 +438,7 @@ class MainWindow(QMainWindow):
     def __init__(self, config: dict) -> None:
         super().__init__()
         self.config = config
+        self._app = None
         self.setWindowTitle("JARVIS")
         self.resize(520, 560)
         self._tray: Optional[QSystemTrayIcon] = None
@@ -312,6 +462,21 @@ class MainWindow(QMainWindow):
         title.setFont(font)
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
+
+        # premium particle orb (falls back to a label if OpenGL/Qt painting fails)
+        self.orb = None
+        try:
+            from orb import create_orb_widget
+
+            self.orb = create_orb_widget(low_resource=bool((config.get("ui") or {}).get("low_resource")))
+            self.orb.setFixedHeight(300)
+            self.orb.clicked = lambda _widget: self.startRequested.emit()
+            layout.addWidget(self.orb)
+        except Exception as exc:  # pragma: no cover - Qt/painting unavailable
+            log.warning("orb widget unavailable (%s); using the text panel only", exc)
+            self.orb_label = QLabel("JARVIS")
+            self.orb_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(self.orb_label)
 
         self.state_label = QLabel("STANDBY")
         self.state_label.setAlignment(Qt.AlignCenter)
@@ -382,9 +547,24 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Exit JARVIS", self)
         exit_action.triggered.connect(self._on_exit)
 
-        self._tray.setContextMenu(
-            self._build_menu(show_action, hide_action, start_action, stop_action, exit_action)
+        history_action = QAction("Task history", self)
+        history_action.triggered.connect(self._on_show_history)
+        diagnostics_action = QAction("Check my JARVIS", self)
+        diagnostics_action.triggered.connect(self._on_show_diagnostics)
+        resource_action = QAction("Low resource mode", self)
+        resource_action.triggered.connect(self._on_toggle_resource)
+        startup_action = QAction("Launch at Windows Startup", self)
+        startup_action.setCheckable(True)
+        startup_action.setChecked(bool((self.config.get("ui") or {}).get("startup", False)))
+        startup_action.triggered.connect(self._on_toggle_startup)
+
+        menu = self._build_menu(
+            show_action, hide_action, start_action, stop_action,
+            history_action, diagnostics_action, resource_action, startup_action, exit_action,
         )
+        self._startup_action = startup_action
+        self._resource_action = resource_action
+        self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_tray_activated)
         try:
             self._tray.show()
@@ -398,6 +578,35 @@ class MainWindow(QMainWindow):
         for action in actions:
             menu.addAction(action)
         return menu
+
+    def _on_show_history(self) -> None:
+        if self._app is None:
+            return
+        self._app.show_task_history()
+
+    def _on_show_diagnostics(self) -> None:
+        if self._app is None:
+            return
+        self._app.show_diagnostics()
+
+    def _on_toggle_resource(self) -> None:
+        if self._app is None:
+            return
+        enabled = not bool((self.config.get("ui") or {}).get("low_resource", False))
+        self._app.set_low_resource(enabled)
+        if self._resource_action is not None:
+            self._resource_action.setChecked(enabled)
+        self.append_log("Low resource mode " + ("on" if enabled else "off"))
+
+    def _on_toggle_startup(self) -> None:
+        if self._app is None:
+            return
+        enabled = bool(self._startup_action.isChecked())
+        try:
+            self._app.toggle_startup(enabled)
+        except Exception as exc:  # pragma: no cover - Windows registry
+            self.append_log(f"Could not change the startup setting: {exc}")
+        self.append_log("Startup setting " + ("enabled" if enabled else "disabled"))
 
     def _on_tray_activated(self, reason: int) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
@@ -415,6 +624,7 @@ class MainWindow(QMainWindow):
         )
         self.start_button.setEnabled(state == "STANDBY")
         self.stop_button.setEnabled(state != "STANDBY")
+        self.set_orb_state(state)
 
     def set_mic_status(self, text: str, color: str = "#2e9e5b") -> None:
         self.mic_label.setText(f"Microphone: {text}")
@@ -466,6 +676,152 @@ class MainWindow(QMainWindow):
     def _on_exit(self) -> None:
         self._allow_quit = True
         self.exitRequested.emit()
+
+    # -- orb ---------------------------------------------------------------
+
+    def set_orb_state(self, state: str) -> None:
+        """Map a voice state onto the orb state, degrading gracefully."""
+        if self.orb is None:
+            return
+        mapping = {
+            "STANDBY": "standby", "LISTENING": "listening", "PROCESSING": "processing",
+            "SPEAKING": "speaking", "ERROR": "error",
+        }
+        try:
+            from orb import OrbState
+
+            self.orb.set_state(OrbState(mapping.get(state, "standby")))
+        except Exception as exc:  # pragma: no cover - Qt state mapping
+            log.debug("orb state update skipped: %s", exc)
+
+    def set_low_resource(self, enabled: bool) -> None:
+        if self.orb is not None:
+            try:
+                self.orb.set_low_resource(bool(enabled))
+            except Exception as exc:  # pragma: no cover
+                log.debug("low resource mode not applied: %s", exc)
+
+    def set_compact(self, enabled: bool) -> None:
+        if self.orb is not None:
+            try:
+                self.orb.set_compact(bool(enabled))
+                self.resize(420 if enabled else 520, 560)
+            except Exception as exc:  # pragma: no cover
+                log.debug("compact mode not applied: %s", exc)
+
+    # -- dialogs -----------------------------------------------------------
+
+    def show_task_history(self, summary: str) -> None:
+        from PySide6.QtWidgets import QDialog, QPlainTextEdit
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Task history")
+        dialog.resize(520, 420)
+        view = QPlainTextEdit(summary or "No tasks recorded yet.")
+        view.setReadOnly(True)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def show_diagnostics(self, report) -> None:
+        from PySide6.QtWidgets import QDialog, QPlainTextEdit
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("JARVIS self-diagnostics")
+        dialog.resize(620, 480)
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setPlainText("\n".join(report.lines()) + "\n\n" + report.summary())
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def run_first_run_wizard(self, app) -> None:
+        """Ask for the microphone, the Gemini key and the permissions."""
+        from PySide6.QtWidgets import (
+            QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit,
+            QMessageBox, QVBoxLayout, QLabel,
+        )
+
+        if bool((self.config.get("ui") or {}).get("first_run_complete")):
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Welcome to JARVIS")
+        dialog.resize(560, 420)
+        form = QFormLayout(dialog)
+
+        intro = QLabel(
+            "Let's set up JARVIS. Your Gemini key stays on this PC and is never "
+            "shared - it is stored in your user profile, outside the app folder."
+        )
+        intro.setWordWrap(True)
+        form.addRow(intro)
+
+        mic_box = QCheckBox("I tested my microphone (say 'Hey JARVIS')")
+        mic_box.setChecked(bool((self.config.get("speech") or {}).get("microphone", {}).get("tested", False)))
+        form.addRow("Microphone", mic_box)
+
+        key_edit = QLineEdit()
+        key_edit.setEchoMode(QLineEdit.Password)
+        key_edit.setPlaceholderText("AIza...")
+        form.addRow("Gemini API key", key_edit)
+
+        startup_box = QCheckBox("Launch JARVIS when Windows starts")
+        form.addRow("Startup", startup_box)
+
+        low_box = QCheckBox("Start in low resource mode")
+        low_box.setChecked(bool((self.config.get("ui") or {}).get("low_resource", False)))
+        form.addRow("Performance", low_box)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            self.append_log("First-run setup skipped. Use Settings later.")
+            return
+
+        if key_edit.text().strip():
+            key_path = Path.home() / ".jarvis" / "gemini_key.txt"
+            try:
+                key_path.parent.mkdir(parents=True, exist_ok=True)
+                key_path.write_text(key_edit.text().strip(), encoding="utf-8")
+                os.chmod(str(key_path), 0o600)
+                self.append_log(f"Gemini key stored at {key_path}")
+            except OSError as exc:
+                QMessageBox.warning(self, "JARVIS", f"Could not store the API key: {exc}")
+
+        ui_cfg = dict(self.config.get("ui") or {})
+        ui_cfg["first_run_complete"] = True
+        ui_cfg["low_resource"] = low_box.isChecked()
+        self.config["ui"] = ui_cfg
+        speech_cfg = dict(self.config.get("speech") or {})
+        microphone = dict(speech_cfg.get("microphone") or {})
+        microphone["tested"] = mic_box.isChecked()
+        speech_cfg["microphone"] = microphone
+        self.config["speech"] = speech_cfg
+
+        self.append_log("First-run setup saved.")
+        if startup_box.isChecked():
+            try:
+                app.toggle_startup(True)
+                self.append_log("JARVIS will launch at Windows startup.")
+            except Exception as exc:  # pragma: no cover - Windows registry
+                self.append_log(f"Startup setting could not be saved: {exc}")
+
+        try:
+            self.settings_requested_flag = True
+            self.settingsRequested.emit()
+        except Exception:  # pragma: no cover - signal wiring
+            pass
 
     def closeEvent(self, event: object) -> None:  # type: ignore[override]
         if self._allow_quit or not self._tray or not QSystemTrayIcon.isSystemTrayAvailable():

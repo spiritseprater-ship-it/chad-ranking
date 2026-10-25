@@ -1,316 +1,236 @@
-# JARVIS — Phase 1
+# JARVIS — a Windows 11 AI assistant
 
 **A real, working voice-controlled Windows assistant.** No mockups, no simulation:
-wake word → speech recognition → local Windows automation → spoken reply.
+wake word → speech recognition → Gemini → Windows automation → spoken reply.
 
-Supports **English, Hindi and Hinglish** (including Devanagari input from
-`hi-IN` recognisers and common Indian English pronunciations).
+Supports **English, Hindi and Hinglish** (including Devanagari input from `hi-IN`
+recognisers and common Indian English pronunciations).
 
 ---
 
-## 1. What works in this phase
+## 1. What it does
 
-| Area | Status |
-| --- | --- |
-| Two-stage listening (STANDBY / ACTIVE) | ✅ local wake word, cloud audio never used in standby |
-| Wake words | ✅ `Hey Jarvis`, `Jarvis`, custom `.onnx` models |
-| Speech → text | ✅ Google Web Speech (default), local Whisper, local Vosk |
-| Text → speech | ✅ Windows SAPI5 offline voice, adjustable rate/volume/voice |
-| 20 local commands | ✅ File Explorer, Chrome, Settings, Calculator, Notepad, folders, file search, file open, Google search, scroll, browser back/forward, volume, screenshot, time, date, stop, standby, exit |
-| Natural-language matching | ✅ scored pattern matching — no exact string equality |
-| File-search disambiguation | ✅ candidates listed, choose by number or name (voice or buttons) |
-| Permission system | ✅ confirmation required for destructive/sensitive actions |
-| Emergency stop | ✅ global **Ctrl + Alt + J**, releases held keyboard/mouse input |
-| PySide6 UI | ✅ status panel, mic indicator, last command/action, settings, start/stop, system tray |
-| Automated tests | ✅ 108 tests (`tests/`) |
+| Phase | Capability | Status |
+| --- | --- | --- |
+| 1 | Two-stage listening (STANDBY / ACTIVE), local wake word, offline STT/TTS fallbacks | ✅ works |
+| 2 | Gemini conversation, tool use, task planning, Live API voice mode, persisted history | ✅ implemented, needs a real key to run |
+| 3 | Windows + browser automation, file intelligence, screen understanding, camera, multi-step tasks | ✅ implemented, needs Windows to run |
+| 4 | Premium particle-orb UI: 5 states, compact/full/tray, low-resource mode, tray icon | ✅ implemented, needs PySide6 to render |
+| 5 | PyInstaller onedir EXE, startup setting, tray, uninstaller, graceful missing-key errors | ✅ build script + CI, **not built here** (see §9) |
+
+Detailed status per requirement: [`JARVIS/CHECKLIST.md`](JARVIS/CHECKLIST.md).
 
 ---
 
 ## 2. Requirements
 
-* **Windows 11, 64-bit**
-* **Python 3.11 or 3.12** (64-bit — required by `numpy`/`onnxruntime`)
-* A microphone
-* Internet access **only** for the default Google Web Speech backend
-  (a local Whisper/Vosk model removes that requirement)
+- **Windows 11 x64**, Python **3.11 or 3.12** only for *building* — the shipped
+  `JARVIS.exe` needs no Python.
+- A microphone. A webcam only if you enable camera support.
+- A **Gemini API key** (free tier is enough) from
+  <https://aistudio.google.com/app/apikey>.
+- No local LLM, no downloaded STT model and no bundled browser are required.
 
 ---
 
-## 3. Quick start
+## 3. Install (developer / from source)
 
-```bat
+```powershell
 cd JARVIS
-
-:: 1. Create a virtual environment
-python -m venv venv
-
-:: 2. Activate it
-venv\Scripts\activate
-
-:: 3. Install the dependencies
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
-
-:: 4. Download the local wake-word model (one time, ~40 MB)
-python -c "import openwakeword.utils; openwakeword.utils.download_models()"
-
-:: 5. Check the environment
-python main.py --check
-
-:: 6. Launch
-python main.py
+playwright install chromium      # optional: browser automation
+python main.py                   # first run shows the setup wizard
 ```
 
-Say **“Hey Jarvis”** — JARVIS answers
-**“JARVIS online. Ready for your command.”** and stays active for the
-configured conversation window (30 s by default).
+Command line:
 
-Optional: copy `.env.example` to `.env` to add a Google API key or point
-JARVIS at a local model folder. `.env` is ignored by Git.
-
----
-
-## 4. Project structure
-
-```
-JARVIS/
-├── main.py            # entry point, config loading, worker thread, wiring
-├── brain.py           # speech -> canonical command (EN / HI / Hinglish)
-├── actions.py         # command -> Windows action, permissions, emergency stop
-├── voice.py           # mic capture, VAD, wake word, speech recognition, TTS
-├── ui.py              # PySide6 panel + system tray + settings dialog
-├── config.json        # all settings
-├── .env.example       # optional secrets (never committed)
-├── requirements.txt   # pinned, actively maintained libraries
-├── assets/            # tray/window icon is generated here at runtime
-├── tests/             # pytest suite (108 tests)
-└── logs/              # rotating log file (created at runtime)
+```powershell
+python main.py                   # normal launch
+python main.py --check           # environment/dependency report
+python main.py --diagnostics     # full self-diagnostic report
+python main.py --config other.json
+python -m pytest tests -q        # 247 tests
 ```
 
 ---
 
-## 5. Configuration (`config.json`)
+## 4. Architecture
 
-| Section | Key | Meaning |
-| --- | --- | --- |
-| `wake_word` | `primary`, `additional` | Wake-word model names |
-| | `custom_models` | `{ "name": "C:/models/my.onnx" }` — your own trained model |
-| | `threshold` | Trigger score 0–1 (lower = more sensitive) |
-| | `refractory_seconds` | Minimum time between two activations |
-| | `activation_phrases` | Extra phrases that activate JARVIS, e.g. `chalo kaam karte hain` |
-| | `activation_response` | The spoken confirmation |
-| `speech` | `backend` | `google` / `whisper` / `vosk` / `auto` |
-| | `language` | Recognition language hint, e.g. `en-IN`, `hi-IN` |
-| | `microphone.device`, `.name_contains` | Microphone selection (no hardcoded IDs) |
-| | `vad.*` | Silence detection thresholds and timeouts |
-| `voice` | `engine`, `voice_name`, `rate`, `volume` | Text-to-speech settings |
-| `conversation` | `timeout_seconds` | Inactivity before returning to standby |
-| `browser` | `default`, `chrome_path`, `search_url` | Browser and search endpoint |
-| `automation` | `scroll_amount`, `volume_step`, `search_max_results` | Input tuning |
-| `permissions` | `require_confirmation.*` | What needs a spoken/visual confirmation |
-| | `allowed_file_roots`, `sensitive_paths` | Where JARVIS may look for files |
-| `hotkey` | `emergency_stop` | `ctrl+alt+j` |
-| `logging` | `level`, `max_bytes`, `backup_count` | Logging |
-
-The file is validated on load; problems are logged as warnings and never crash
-the app. Changes made in **Settings** are written back to `config.json`.
-
----
-
-## 6. Supported commands
-
-| # | Command | Say this (examples) |
-| --- | --- | --- |
-| 1 | Open File Explorer | `File Explorer kholo` / `Open File Explorer` / `files dikhao` |
-| 2 | Open Chrome | `Chrome kholo` / `Open Chrome` / `Browser kholo` |
-| 3 | Open Windows Settings | `Open settings` / `Settings kholo` |
-| 4 | Open Calculator | `Open calculator` / `Calculator kholo` |
-| 5 | Open Notepad | `Open notepad` / `Notepad kholo` |
-| 6 | Open a folder | `Open folder Downloads` / `Downloads folder kholo` |
-| 7 | Search for a file | `Search for resume` / `File search project report` |
-| 8 | Open a file | `Open report.pdf` / `Open file report.pdf` |
-| 9 | Google search | `Chrome par Python search karo` / `Search for weather` |
-| 10 | Scroll up | `Scroll up` / `Page up` |
-| 11 | Scroll down | `Scroll down` / `Scroll niche karo` |
-| 12 | Browser back | `Go back` / `Browser back` |
-| 13 | Browser forward | `Go forward` / `Next page` |
-| 14 | Adjust volume | `Volume 60` / `Set volume to 80` / `Volume up` |
-| 15 | Screenshot | `Take a screenshot` / `Screenshot le lo` |
-| 16 | Time | `What time is it` / `Time batao` / `Waqt kya hai` |
-| 17 | Date | `What is the date` / `Date batao` / `Tarikh kya hai` |
-| 18 | Stop listening | `Stop listening` / `Band karo` |
-| 19 | Return to standby | `Go to standby` / `Jarvis, sleep` |
-| 20 | Exit JARVIS | `Exit Jarvis` / `Jarvis, bye` |
-
-Extras implemented on top: `Open app Spotify`, `Close app Chrome`, `Mute`,
-`Unmute`.
-
-### How matching works
-
-Text is normalised, Hindi/Hinglish words are translated into English keywords,
-and every command is scored by how much of the sentence it covers. The best
-score wins, so `Explorer kholo`, `Open File Explorer` and `files dikhao` all
-resolve to the same action without any exact string comparison. Unrecognised
-speech is reported back and asked to be repeated instead of guessed.
-
----
-
-## 7. Wake-word models
-
-JARVIS uses **openwakeword**, a fully local ONNX wake-word engine. The models
-are **not** committed to Git (they are large binaries). Obtain them once:
-
-```bat
-:: download the built-in models (includes hey_jarvis)
-python -c "import openwakeword.utils; openwakeword.utils.download_models()"
+```
+main.py        entry point, config, logging, worker thread, JarvisApp orchestration
+brain.py       natural-language matching + Router (local command vs Gemini)
+actions.py     Phase 1 action engine + ToolRegistry (validated tool dispatch)
+voice.py       mic stream, VAD, wake word, speech recognition, TTS
+gemini.py      Gemini client, conversation history, tool schemas, Live API wrapper
+desktop.py     Windows control: mouse, keyboard, windows, apps, files, screenshots
+browser.py     Playwright browser controller (lazy, optional)
+camera.py      on-demand webcam capture (optional)
+planner.py     multi-step task planning, command chaining, cancellation, history
+orb.py         particle-orb visualisation (pure maths + lazy Qt widget)
+ui.py          PySide6 window, settings, first-run wizard, dialogs
+diagnostics.py "Check my JARVIS" self-tests
 ```
 
-They land in `%USERPROFILE%\.cache\openwakeword`. To use your own place:
+**Routing.** Every utterance goes through `brain.Router`:
 
-1. Train or obtain a `.onnx` wake-word model (e.g. with the
-   **openwakeword training scripts** or **snowboy/porcupine** conversion).
-2. Point JARVIS at it:
+1. `cancel` — always local, works offline.
+2. `local` — matched by the local command table. Lifecycle, safety and system
+   controls are **always local**, so volume, mute, exit, cancel and the emergency
+   stop never depend on the cloud.
+3. `ai` — conversational or unrecognised requests go to Gemini, which may call
+   the validated tool registry.
+4. `unknown` — nothing matched and Gemini is unavailable; JARVIS asks you to
+   repeat instead of guessing.
 
-```json
-{
-  "wake_word": {
-    "primary": "my_wake_word",
-    "custom_models": { "my_wake_word": "C:/models/my_wake_word.onnx" }
-  }
-}
-```
+**Tool safety.** Gemini never receives shell access. It may only call the 33
+tools declared in `gemini.TOOL_SCHEMAS`, each of which is validated in
+`actions.ToolRegistry` before it touches the operating system:
 
-If no model can be loaded, JARVIS logs a loud warning and falls back to
-**transcript mode** (light VAD + short recognition pass that listens for the
-wake word). Transcript mode works, but it costs more CPU and — with the Google
-backend — sends short audio to the cloud even in standby. The active mode is
-always reported in the UI.
-
-> No wake-word model is bundled and no fake model is claimed: the fallback is
-> explicit, logged, and configurable.
-
----
-
-## 8. Speech recognition backends
-
-| Backend | Internet | Notes |
-| --- | --- | --- |
-| `google` (default) | **Yes** | Google Web Speech. Free for personal use; no key needed, but the unauthenticated endpoint is not guaranteed. Set `GOOGLE_SPEECH_API_KEY` in `.env` for reliability. |
-| `whisper` | No | `faster-whisper`, fully local. Download a model first (`tiny` is ~75 MB). Best for Hinglish when combined with `initial_prompt`. |
-| `vosk` | No | Small, fast, offline; needs a downloaded model (`VOSK_MODEL_PATH`). |
-| `auto` | — | Whisper → Vosk → Google |
-
-Hindi/Hinglish works with `en-IN` + `hi-IN` fallback and a Hinglish
-`initial_prompt` for Whisper. Devanagari script returned by a `hi-IN`
-recogniser is translated before matching.
+- unknown tool names, missing arguments and out-of-range values are rejected
+- destructive tools (`file_delete`, `window_close`, `keyboard_*`,
+  `mouse_*`, `take_screenshot`, `camera_photo`, `summarize_page`) require an
+  explicit confirmation from you
+- protected paths (`Windows`, `System32`, `AppData`, `$Recycle.Bin`, …) are
+  refused outright
+- no `eval`/`exec`, no `shell=True`, no arbitrary commands from model output
+- model output and web content are treated as untrusted data, never as code
 
 ---
 
-## 9. Safety and permissions
+## 5. Using it
 
-* Only whitelisted applications are launched — executable paths are resolved
-  from a lookup table, never from raw speech.
-* No shell strings from speech, no `shell=True`, no `eval`/`exec`.
-* Actions flagged in `permissions.require_confirmation` ask for confirmation
-  (a dialog appears and JARVIS also accepts a spoken “yes”):
+Wake it with **"Hey Jarvis"** (or click the orb / tray icon).
 
-| Category | Covers |
+| You say | What happens |
 | --- | --- |
-| `delete_files` | deleting files |
-| `overwrite_files` | overwriting files |
-| `move_sensitive_files` | moving sensitive files |
-| `external_communication` | web search, sending messages |
-| `camera_access` | screenshots / screen capture |
-| `install_software` | installing software |
-| `system_configuration` | direct volume changes, mute, lock screen |
+| `open Chrome` | launches the app |
+| `find my budget file` | searches your files, lists matches, asks you to pick |
+| `open the third one` | opens the chosen match |
+| `search the web for flights to Mumbai` | browser search |
+| `search for flights and open the third result` | multi-step task, planned and executed |
+| `Jarvis, cancel` / `cancel` | stops the running task |
+| `volume 40`, `mute`, `scroll down` | system control, offline |
+| `take a screenshot` | asks for confirmation, then captures |
+| `what is the exchange rate` | Gemini conversation |
+| `Check my JARVIS` | self-diagnostics |
+| `Show task history` | recent tasks and their outcome |
+| `Turn on low resource mode` | fewer orb particles, lower CPU |
+| `exit jarvis` | speaks goodbye and exits |
 
-* **Emergency stop:** press **Ctrl + Alt + J** anywhere. Automation is
-  interrupted, held keyboard/mouse input is released, and JARVIS returns to
-  standby. PyAutoGUI’s fail-safe (slam the mouse into the top-left corner) is
-  also enabled.
-* The microphone indicator shows STANDBY / LISTENING explicitly; audio is
-  never recorded silently.
+**Emergency stop:** `Ctrl + Alt + J` at any time. It releases held
+keyboard/mouse input and does not need Gemini to be online.
 
 ---
 
-## 10. Acceptance tests
+## 6. Settings
 
-Run through these with the app open (`logs/jarvis.log` records every event):
+`Settings` writes `config.json`:
 
-| # | Test | Expected |
-| --- | --- | --- |
-| 1 | Start the application | JARVIS enters **STANDBY**; tray icon appears |
-| 2 | Say *“Hey Jarvis”* | JARVIS activates and says “JARVIS online. Ready for your command.” |
-| 3 | Say *“File Explorer kholo”* | File Explorer opens |
-| 4 | Say *“Chrome par Python search karo”* | Chrome opens with a Google search for Python |
-| 5 | Say *“Scroll down”* | The active page scrolls down |
-| 6 | Say *“Jarvis, stop listening”* | JARVIS returns to standby and says “Stopped listening.” |
-| 7 | Press **Ctrl + Alt + J** | Automation stops immediately, inputs released |
+- **Gemini** — enable/disable, API key, model. The key is stored in
+  `%USERPROFILE%\.jarvis\gemini_key.txt` (0600) rather than in `config.json`.
+- **Tools** — tick exactly which automation tools JARVIS may use, or use
+  *Recommended set only*. Unticked tools are refused even if Gemini asks.
+- **Wake word / speech / voice** — as in Phase 1.
+- **Startup / Interface** — launch at Windows start, low-resource mode, compact
+  window.
 
-### Automated tests
+The current verified Gemini models are `gemini-3.8-flash` (text/tools) and
+`gemini-3.8-live` (voice). `gemini-2.0-flash` and friends are shut down and are
+rejected with a clear message.
 
-```bat
-python -m pytest tests -q
+---
+
+## 7. Packaging (Phase 5)
+
+```powershell
+cd JARVIS
+powershell -ExecutionPolicy Bypass -File build.ps1
+powershell -ExecutionPolicy Bypass -File build.ps1 -WithBrowser
+powershell -ExecutionPolicy Bypass -File build.ps1 -SkipTests
 ```
 
-108 tests cover command understanding (English/Hindi/Hinglish/Devanagari),
-number parsing, permissions, disambiguation, emergency stop, configuration
-validation and the audio engine (VAD, wake-word fallback, standby state).
-Microphone-dependent behaviour is covered by manual tests above.
+`build.ps1` creates a clean venv, installs requirements, runs the tests, builds
+with `JARVIS.spec` (onedir, hidden imports, no console window) and zips
+`dist/JARVIS` into `JARVIS-Windows.zip` together with `README.txt`.
 
----
+**Measured size is reported by the script** (`JARVIS.exe`, runtime folder,
+zip). The 50–100 MB target applies to the *download*; the runtime folder is
+larger because `onnxruntime` (wake word) and PySide6 are unavoidable. Playwright's
+Chromium is deliberately **not** bundled — run `playwright install chromium`
+once on the target PC if you want browser automation.
 
-## 11. Packaging to a Windows EXE
+Uninstall:
 
-```bat
-pyinstaller ^
-  --noconsole --onefile ^
-  --name JARVIS ^
-  --add-data "assets;assets" ^
-  main.py
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1 -AppDir "C:\Program Files\JARVIS"
+# add -Purge to also delete history, screenshots, photos and the stored key
 ```
 
-Output: `dist\JARVIS.exe`. Build on the target Windows machine (or a matching
-Windows CI runner) — PyInstaller cannot cross-compile from Linux.
+GitHub Actions runs the same build on `windows-latest` and uploads the artifact
+(`.github/workflows/jarvis-windows.yml`).
 
 ---
 
-## 12. Troubleshooting
+## 8. Tests
 
-| Symptom | Fix |
+```powershell
+python -m pytest tests -q        # 247 passed, 1 skipped
+```
+
+| File | Covers |
 | --- | --- |
-| `--check` shows `[MISS] PySide6` | `pip install -r requirements.txt` |
-| No microphone found | Windows **Settings → Privacy → Microphone → Desktop app access** must be on; pick a device in **Settings** inside JARVIS |
-| `could not register the emergency-stop hotkey` | Another app owns Ctrl+Alt+J; use the window's **Stop listening** button instead |
-| Nothing happens when you speak | Say the wake word first; check that the tray icon is not in ERROR state; read `logs/jarvis.log` |
-| Wake word never triggers | Lower `wake_word.threshold` (e.g. `0.4`) or check that the model downloaded (see §7) |
-| JARVIS answers its own voice | `voice.self_echo_cooldown_ms` and the speaking-detection guard already handle this; raise the cooldown if needed |
-| Google Web Speech fails | The backend needs internet, or set `GOOGLE_SPEECH_API_KEY` in `.env`, or switch `speech.backend` to `whisper` |
-| Whisper/Vosk missing | Download the model and set `speech.backend`, `speech.whisper.model_size` or `VOSK_MODEL_PATH` |
-| `settings.json` / permission errors | JARVIS logs the exact problem; the app keeps running with defaults |
-| Volume commands fail | Requires Windows Mixed Volume Control (`pycaw`); some USB audio drivers do not expose it |
-| Screenshot is blank | Some DRM/protected windows cannot be captured — a Windows limitation, not a bug |
+| `test_brain.py` | command matching (Phase 1) |
+| `test_actions.py` | action engine, permissions, disambiguation |
+| `test_config_and_voice.py` | config validation, voice plumbing |
+| `test_router.py` | new task commands, hybrid routing |
+| `test_gemini.py` | keys, models, errors, planning, tool loop, schema drift |
+| `test_desktop.py` | file ranking, index, controller, registry gating |
+| `test_browser.py` | provider mapping, tab state, error paths |
+| `test_orb.py` | palettes, particle maths, transitions |
+| `test_planner.py` | chaining, validation, cancellation, history |
+
+Everything that needs Windows, a GUI, a browser or a camera is either
+parameterised or skipped: the suite runs green on Linux CI.
 
 ---
 
-## 13. Verification checklist
+## 9. Honest status of the Windows build
 
-- [ ] `python -m venv venv` + `pip install -r requirements.txt` succeed
-- [ ] `python main.py --check` reports `[OK]` for PySide6, sounddevice, numpy, openwakeword, SpeechRecognition, pyttsx3, pyautogui
-- [ ] Wake-word model downloaded; log says `wake word engine mode: openwakeword`
-- [ ] `config.json` loads with **no warnings**
-- [ ] `python -m pytest tests -q` → **108 passed**
-- [ ] App starts into STANDBY with a tray icon; closing the window hides to tray
-- [ ] “Hey Jarvis” activates; “chalo kaam karte hain” also activates
-- [ ] Commands 3–5, 7, 8, 14–17 execute as expected
-- [ ] Multi-match file search asks for a choice; a number or name selects it
-- [ ] Volume/screenshot ask for confirmation according to `config.json`
-- [ ] Ctrl + Alt + J stops automation immediately
-- [ ] No audio leaves the machine while in STANDBY (local wake word only)
+This repository was developed and tested on **Linux**. PyInstaller cannot produce
+a Windows executable here, so:
+
+- **No `JARVIS.exe` exists in this repository and it has never been executed.**
+- `JARVIS.spec`, `build.ps1`, `uninstall.ps1` and the CI workflow are written and
+  reviewed, but unverified on a real Windows machine.
+- Everything *below* the OS layer (routing, planning, tools, ranking, orb maths,
+  diagnostics, config, tests) is implemented and unit-tested here.
+- PySide6, Playwright, pyautogui, pycaw, camera and window-management code paths
+  are **not executed** on this host; they are guarded and documented, and their
+  pure logic is tested where possible.
+
+Before shipping: run `build.ps1` on Windows 11 x64, confirm the EXE starts,
+complete the first-run wizard, and report the measured size.
 
 ---
 
-## 14. Phase 2 (not implemented yet)
+## 10. Safety rules
 
-Gemini integration and the animated 3D orb are deliberately **not** in this
-phase. The module boundaries (`brain` / `actions` / `voice` / `ui`) are ready
-for them.
+- no `eval`/`exec`, no arbitrary shell commands from model output
+- every tool call is validated before execution
+- confirmation before deleting files, sending messages, uploading, sharing
+  personal data, purchasing or changing system settings
+- the emergency stop never depends on Gemini being online
+- UAC, Windows Defender and app permission prompts are never bypassed
+- the API key lives outside the app folder in the user profile and is never logged
+
+---
+
+## 11. Deliberately not included
+
+Bundled local LLMs, multiple AI providers, per-command computer vision,
+continuous camera streaming, a heavy 3D engine, a plugin marketplace,
+unrestricted file deletion, elevated privileges for normal operations,
+multiple background agents, and WhatsApp automation. Each was considered and
+postponed to keep the app small, auditable and safe.

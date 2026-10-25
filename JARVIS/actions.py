@@ -34,6 +34,14 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from brain import ParsedCommand
+from desktop import ToolResult
+
+
+def _import_desktop():
+    """Import the Windows control engine lazily (absent on non-Windows test runs)."""
+    from desktop import DesktopController  # type: ignore
+
+    return DesktopController
 
 log = logging.getLogger("jarvis.actions")
 
@@ -1036,10 +1044,381 @@ def _parse_level(raw: str) -> Optional[int]:
     return int(max(0, min(100, value)))
 
 
+# ---------------------------------------------------------------------------
+# tool registry for Gemini and the task planner
+# ---------------------------------------------------------------------------
+
+#: tools that must always be confirmed before they run
+CONFIRMATION_TOOLS = frozenset({
+    "take_screenshot", "camera_photo", "window_close", "keyboard_type",
+    "keyboard_shortcut", "mouse_click", "mouse_drag", "file_delete",
+    "file_rename", "file_move", "summarize_page", "browser_open_url",
+})
+
+
+def _as_int(args: Dict[str, object], key: str, default: int, minimum: Optional[int] = None,
+            maximum: Optional[int] = None) -> int:
+    raw = args.get(key, default)
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def _as_text(args: Dict[str, object], key: str, default: str = "") -> str:
+    raw = args.get(key, default)
+    if raw is None:
+        return default
+    return str(raw).strip()
+
+
+class ToolRegistry:
+    """Validated dispatcher for every tool Gemini or the planner may call.
+
+    Every call is checked against the argument types, the permission policy and
+    the confirmation rules *before* it touches the operating system, and the
+    result is always a plain ``{"ok": bool, "result": str}`` dictionary that is
+    safe to hand back to the model.
+    """
+
+    def __init__(
+        self,
+        desktop: "DesktopController",
+        browser: Optional["BrowserController"] = None,
+        camera: Optional["CameraController"] = None,
+        permissions: Optional[PermissionManager] = None,
+        gemini: Optional[object] = None,
+        local_executor: Optional[Callable[[str, Dict[str, object]], Dict[str, object]]] = None,
+        allowed_tools: Sequence[str] = (),
+        confirm: Optional[Callable[[str, Dict[str, object]], bool]] = None,
+    ) -> None:
+        self.desktop = desktop
+        self.browser = browser
+        self.camera = camera
+        self.permissions = permissions or PermissionManager()
+        self.gemini = gemini
+        self.local_executor = local_executor
+        self.allowed_tools = set(allowed_tools) or None
+        self.confirm = confirm
+        self._handlers = {
+            "open_application": self.t_open_application,
+            "search_files": self.t_search_files,
+            "open_file": self.t_open_file,
+            "search_web": self.t_search_web,
+            "browser_open_url": self.t_browser_open_url,
+            "browser_search": self.t_browser_search,
+            "browser_open_result": self.t_browser_open_result,
+            "browser_extract_text": self.t_browser_extract_text,
+            "browser_navigate": self.t_browser_navigate,
+            "browser_scroll": self.t_browser_scroll,
+            "navigate_browser": self.t_navigate_browser,
+            "scroll_page": self.t_scroll_page,
+            "browser_tabs": self.t_browser_tabs,
+            "browser_activate_tab": self.t_browser_activate_tab,
+            "take_screenshot": self.t_take_screenshot,
+            "get_system_status": self.t_get_system_status,
+            "window_list": self.t_window_list,
+            "window_focus": self.t_window_focus,
+            "window_minimize": self.t_window_minimize,
+            "window_maximize": self.t_window_maximize,
+            "window_close": self.t_window_close,
+            "mouse_click": self.t_mouse_click,
+            "mouse_drag": self.t_mouse_drag,
+            "keyboard_type": self.t_keyboard_type,
+            "keyboard_shortcut": self.t_keyboard_shortcut,
+            "file_create_folder": self.t_file_create_folder,
+            "file_rename": self.t_file_rename,
+            "file_copy": self.t_file_copy,
+            "file_move": self.t_file_move,
+            "file_delete": self.t_file_delete,
+            "read_document": self.t_read_document,
+            "camera_photo": self.t_camera_photo,
+            "summarize_page": self.t_summarize_page,
+        }
+
+    # -- introspection ------------------------------------------------------
+
+    def names(self) -> List[str]:
+        return sorted(self._handlers)
+
+    def describe(self, name: str) -> str:
+        handler = self._handlers.get(name)
+        return handler.__doc__ or name if handler else "Unknown tool."
+
+    def validate(self, name: str, arguments: Dict[str, object]) -> Optional[str]:
+        """Return a human-readable problem, or ``None`` when the call is valid."""
+        if not isinstance(name, str) or not name.strip():
+            return "No tool name given."
+        if name.startswith("local:"):
+            if self.local_executor is None:
+                return "Local command execution is not enabled."
+            return None
+        if name not in self._handlers:
+            return f"Unknown tool '{name}'."
+        if not isinstance(arguments, dict):
+            return "Tool arguments must be an object."
+        # argument shape is checked before the enabled-list so the model sees
+        # the real problem instead of a generic permission message
+        if name in ("browser_open_result", "browser_activate_tab") and _as_int(arguments, "index", 1) < 1:
+            return "Tab/result index must be at least 1."
+        if name == "mouse_click":
+            text = arguments.get("text")
+            if arguments.get("x") is None and arguments.get("y") is None and not text:
+                return "Provide coordinates or visible text to click."
+        if self.allowed_tools is not None and name not in self.allowed_tools:
+            return f"Tool '{name}' is not enabled in the settings."
+        if name in ("browser_open_result", "browser_activate_tab"):
+            value = _as_int(arguments, "index", 1, minimum=1)
+            if value < 1:
+                return "Tab/result index must be at least 1."
+        if name == "mouse_click":
+            x = arguments.get("x"); y = arguments.get("y")
+            text = arguments.get("text")
+            if x is None and y is None and not text:
+                return "Provide coordinates or visible text to click."
+            if x is not None and y is not None:
+                try:
+                    _as_int(arguments, "x", 0); _as_int(arguments, "y", 0)
+                except (TypeError, ValueError):
+                    return "Coordinates must be integers."
+        return None
+
+    def requires_confirmation(self, name: str, arguments: Dict[str, object]) -> bool:
+        if name in CONFIRMATION_TOOLS:
+            return True
+        if name == "file_delete":
+            path = Path(_as_text(arguments, "path"))
+            return self.desktop.is_sensitive_path(path)
+        if name in ("file_move", "file_rename"):
+            target = Path(_as_text(arguments, "path" if name == "file_move" else "path"))
+            return self.desktop.is_sensitive_path(target)
+        return False
+
+    # -- execution ----------------------------------------------------------
+
+    def execute(self, name: str, arguments: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+        """Run one validated tool call. Never raises for bad input."""
+        arguments = arguments or {}
+        problem = self.validate(name, arguments)
+        if problem:
+            log.warning("rejected tool call %s: %s", name, problem)
+            return {"ok": False, "result": f"I will not run that: {problem}"}
+
+        if self.requires_confirmation(name, arguments):
+            if self.confirm is None:
+                return {
+                    "ok": False,
+                    "result": f"'{name}' needs your confirmation, but none was requested.",
+                }
+            try:
+                approved = bool(self.confirm(name, arguments))
+            except Exception as exc:  # pragma: no cover - UI callback safety
+                log.warning("confirmation callback failed: %s", exc)
+                return {"ok": False, "result": "The confirmation prompt failed."}
+            if not approved:
+                return {"ok": False, "result": f"You cancelled '{name}'."}
+
+        try:
+            if name.startswith("local:"):
+                return self.local_executor(name, arguments)  # type: ignore[misc]
+            outcome = self._handlers[name](arguments)
+        except Exception as exc:  # noqa: BLE001 - tool failures become model-visible text
+            log.exception("tool %s crashed", name)
+            return {"ok": False, "result": f"Tool '{name}' failed: {exc}"}
+
+        if isinstance(outcome, dict):
+            result = outcome.get("result", "")
+            return {"ok": bool(outcome.get("ok", True)), "result": str(result)}
+        return {"ok": True, "result": str(outcome)}
+
+    def _finish(self, outcome: "ToolResult") -> Dict[str, object]:
+        return {"ok": bool(outcome.ok), "result": outcome.as_text()}
+
+    # -- handlers -----------------------------------------------------------
+
+    def t_open_application(self, args: Dict[str, object]) -> Dict[str, object]:
+        name = _as_text(args, "name") or _as_text(args, "application")
+        return self._finish(self.desktop.launch_application(name))
+
+    def t_search_files(self, args: Dict[str, object]) -> Dict[str, object]:
+        query = _as_text(args, "query")
+        directory = _as_text(args, "directory") or None
+        return self._finish(self.desktop.search_files(query, directory))
+
+    def t_open_file(self, args: Dict[str, object]) -> Dict[str, object]:
+        path = self.desktop.resolve_file(_as_text(args, "path"))
+        if path is None:
+            return {"ok": False, "result": "I could not find that file."}
+        return self._finish(self.desktop.open_path(path))
+
+    def t_search_web(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled in the settings."}
+        return self._finish(self.browser.search(_as_text(args, "query"),
+                                               _as_text(args, "provider") or "google"))
+
+    def t_browser_open_url(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.open(_as_text(args, "url")))
+
+    def t_browser_search(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.search(_as_text(args, "query"),
+                                               _as_text(args, "provider") or "google"))
+
+    def t_browser_open_result(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.open_search_result(_as_int(args, "index", 1, minimum=1)))
+
+    def t_browser_extract_text(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.extract_text(_as_int(args, "limit", 6000, minimum=200, maximum=20000)))
+
+    def t_browser_navigate(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.navigate(_as_text(args, "url")))
+
+    def t_browser_scroll(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.scroll(_as_text(args, "direction", "down"),
+                                               _as_int(args, "amount", 4, minimum=1, maximum=20)))
+
+    def t_navigate_browser(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.navigate(_as_text(args, "direction", "back")))
+
+    def t_scroll_page(self, args: Dict[str, object]) -> Dict[str, object]:
+        """Scroll the focused desktop window (not the browser)."""
+        return self._finish(self.desktop.scroll(_as_text(args, "direction", "down"),
+                                               _as_int(args, "amount", 5, minimum=1, maximum=20)))
+
+    def t_browser_tabs(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.list_tabs())
+
+    def t_browser_activate_tab(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.browser is None:
+            return {"ok": False, "result": "Browser automation is not enabled."}
+        return self._finish(self.browser.activate_tab(_as_int(args, "index", 1, minimum=1)))
+
+    def t_take_screenshot(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.take_screenshot())
+
+    def t_get_system_status(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.system_status())
+
+    def t_window_list(self, args: Dict[str, object]) -> Dict[str, object]:
+        windows = self.desktop.list_windows()
+        if not windows:
+            return {"ok": True, "result": "No visible windows were found."}
+        lines = [str(w["title"]) for w in windows[:20]]
+        return {"ok": True, "result": f"{len(windows)} visible windows:\n" + "\n".join(lines)}
+
+    def t_window_focus(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.focus_window(_as_text(args, "title")))
+
+    def t_window_minimize(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.minimize_window(_as_text(args, "title")))
+
+    def t_window_maximize(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.maximize_window(_as_text(args, "title")))
+
+    def t_window_close(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.close_window(_as_text(args, "title")))
+
+    def t_mouse_click(self, args: Dict[str, object]) -> Dict[str, object]:
+        text = _as_text(args, "text")
+        has_coords = args.get("x") is not None and args.get("y") is not None
+        if text:
+            return self._finish(self.desktop.click_visible_text(
+                text, fallback_to_screenshot=bool(args.get("fallback", False))))
+        if not has_coords:
+            return {"ok": False, "result": "Provide x/y coordinates or visible text."}
+        return self._finish(self.desktop.mouse_click(
+            _as_int(args, "x", 0), _as_int(args, "y", 0),
+            _as_text(args, "button", "left") or "left", double=bool(args.get("double", False))))
+
+    def t_mouse_drag(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.mouse_drag(
+            _as_int(args, "x1", 0), _as_int(args, "y1", 0),
+            _as_int(args, "x2", 0), _as_int(args, "y2", 0)))
+
+    def t_keyboard_type(self, args: Dict[str, object]) -> Dict[str, object]:
+        text = _as_text(args, "text")
+        if not text:
+            return {"ok": False, "result": "Nothing to type."}
+        if len(text) > 4000:
+            return {"ok": False, "result": "That text is too long to type safely."}
+        return self._finish(self.desktop.keyboard_type(text))
+
+    def t_keyboard_shortcut(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.keyboard_shortcut(_as_text(args, "keys")))
+
+    def t_file_create_folder(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.create_folder(_as_text(args, "name"),
+                                                      _as_text(args, "parent") or None))
+
+    def t_file_rename(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.rename_path(_as_text(args, "path"), _as_text(args, "new_name")))
+
+    def t_file_copy(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.copy_path(_as_text(args, "source"), _as_text(args, "destination")))
+
+    def t_file_move(self, args: Dict[str, object]) -> Dict[str, object]:
+        return self._finish(self.desktop.move_path(_as_text(args, "source"), _as_text(args, "destination")))
+
+    def t_file_delete(self, args: Dict[str, object]) -> Dict[str, object]:
+        target = self.desktop.resolve_file(_as_text(args, "path"))
+        if target is None:
+            return {"ok": False, "result": "I could not find that file."}
+        if self.desktop.is_sensitive_path(target):
+            return {"ok": False, "result": "That path is protected and I will not delete it."}
+        return self._finish(self.desktop.delete_path(str(target)))
+
+    def t_read_document(self, args: Dict[str, object]) -> Dict[str, object]:
+        outcome = self.desktop.read_document(_as_text(args, "path"),
+                                             _as_int(args, "max_chars", 8000, minimum=200, maximum=40000))
+        data = outcome.data if isinstance(outcome, ToolResult) else {}
+        return {"ok": outcome.ok, "result": outcome.message, "data": data}
+
+    def t_camera_photo(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.camera is None:
+            return {"ok": False, "result": "Camera support is not enabled."}
+        ok, message, path = self.camera.take_photo(_as_text(args, "label") or None)
+        return {"ok": ok, "result": message, "data": {"path": str(path) if path else ""}}
+
+    def t_summarize_page(self, args: Dict[str, object]) -> Dict[str, object]:
+        if self.gemini is None or not getattr(self.gemini, "configured", False):
+            return {"ok": False, "result": "Gemini is not configured, so I cannot summarise pages."}
+        url = _as_text(args, "url")
+        text = _as_text(args, "text")
+        if self.browser is not None and not text:
+            outcome = self.browser.extract_text()
+            if outcome.ok:
+                text = str(outcome.data.get("text", ""))
+        summary = self.gemini.summarize_page(url, text)
+        return {"ok": True, "result": summary}
+
+
 __all__ = [
     "ActionEngine",
     "ActionResult",
     "PermissionManager",
     "GlobalHotkey",
     "EmergencyStopped",
+    "ToolRegistry",
+    "CONFIRMATION_TOOLS",
 ]

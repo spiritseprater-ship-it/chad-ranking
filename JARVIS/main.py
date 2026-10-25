@@ -61,8 +61,25 @@ from actions import (  # noqa: E402
     ActionResult,
     GlobalHotkey,
     PermissionManager,
+    ToolRegistry,
 )
-from brain import Brain, ParsedCommand  # noqa: E402
+from brain import Brain, ParsedCommand, Router  # noqa: E402
+from desktop import DesktopController, StartupManager  # noqa: E402
+from diagnostics import run_diagnostics  # noqa: E402
+from gemini import (  # noqa: E402
+    DEFAULT_LIVE_MODEL,
+    DEFAULT_MODEL,
+    GeminiClient,
+    GeminiError,
+    extract_api_key,
+    looks_like_placeholder,
+)
+from planner import (  # noqa: E402
+    TOOL_PREFIX,
+    TaskHistory,
+    TaskPlanner,
+    TaskRunner,
+)
 from voice import (  # noqa: E402
     ERROR,
     LISTENING,
@@ -363,6 +380,7 @@ class CommandWorker(threading.Thread):
         super().__init__(name="jarvis-commands", daemon=True)
         self._engine = engine
         self._commands: "queue.Queue[ParsedCommand]" = queue.Queue()
+        self._specials: "queue.Queue[tuple]" = queue.Queue()
         self._choices: "queue.Queue[tuple]" = queue.Queue()
         self._confirmations: Dict[str, _ConfirmationWait] = {}
         self._lock = threading.RLock()
@@ -379,6 +397,10 @@ class CommandWorker(threading.Thread):
 
     def submit(self, parsed: ParsedCommand) -> None:
         self._commands.put(parsed)
+
+    def submit_special(self, kind: str, payload: Optional[Dict[str, object]] = None) -> None:
+        """Queue a non-command job (AI turn, planner run, diagnostics, ...)."""
+        self._specials.put((kind, payload or {}))
 
     def submit_choice(self, text: str, payload: Optional[Dict[str, object]] = None) -> bool:
         with self._lock:
@@ -422,6 +444,8 @@ class CommandWorker(threading.Thread):
 
     def run(self) -> None:
         while not self._stop.is_set():
+            if self._handle_special():
+                continue
             try:
                 parsed = self._commands.get(timeout=0.2)
             except queue.Empty:
@@ -436,6 +460,20 @@ class CommandWorker(threading.Thread):
                 self._handle_choice(result)
                 continue
             self.results.put(result)
+
+    def _handle_special(self) -> bool:
+        """Run one queued special job; True when something was handled."""
+        try:
+            kind, payload = self._specials.get_nowait()
+        except queue.Empty:
+            return False
+        handler = getattr(self, "on_special", None)
+        if handler is None:
+            return False
+        result = handler(kind, payload)
+        if result is not None:
+            self.results.put(result)
+        return True
 
     def _handle_confirmation(self, result: ActionResult) -> None:
         key = uuid.uuid4().hex
@@ -501,10 +539,14 @@ class JarvisApp:
         self.engine = ActionEngine(config, self.permissions)
         self.voice = build_voice_engine(config)
         self.worker = CommandWorker(self.engine)
+        self.worker.on_special = self._on_special
+        self.tool_confirmations: Dict[str, _ConfirmationWait] = {}
+        self.last_report = None
         # imported lazily: PySide6 is only needed when the GUI is created
         from ui import MainWindow
 
         self.window = MainWindow(config)
+        self.window._app = self
         self.hotkey = GlobalHotkey(self._emergency_stop)
         self._speaking = False
         self._last_state = STANDBY
@@ -589,6 +631,19 @@ class JarvisApp:
 
     def _on_config_saved(self, new_config: Dict[str, object]) -> None:
         self.config = new_config
+        ui_cfg = new_config.get("ui") or {}
+        if "low_resource" in ui_cfg:
+            self.set_low_resource(bool(ui_cfg.get("low_resource")))
+        if "compact" in ui_cfg:
+            try:
+                self.window.set_compact(bool(ui_cfg.get("compact")))
+            except Exception:  # pragma: no cover - Qt widgets
+                log.debug("compact mode not applied")
+        startup = bool(ui_cfg.get("startup"))
+        try:
+            self.startup_manager.set_enabled(startup, self._executable_path())
+        except Exception as exc:  # pragma: no cover - Windows registry
+            log.warning("could not apply the startup setting: %s", exc)
 
         timeout = float((new_config.get("conversation") or {}).get("timeout_seconds", 30))
         self.voice.set_conversation_timeout(timeout)
@@ -614,6 +669,8 @@ class JarvisApp:
             except queue.Empty:
                 break
             self._handle_event(event)
+
+        self._drain_tool_confirmations()
 
         while True:
             try:
@@ -680,16 +737,29 @@ class JarvisApp:
                 self.window.append_log("Choice submitted.")
             return
 
-        parsed = self.brain.parse(text)
-        if parsed is None:
+        decision = self.router.route(text)
+        self.window.set_command(f"{decision.label}  ({decision.kind})")
+
+        if decision.kind == "cancel":
+            self.worker.submit_special("cancel")
+            return
+        if decision.kind == "unknown":
             self.window.set_command("(unrecognized)")
             self.speak(RESPONSES["didnt_catch"])
+            self.window.append_log(decision.reason)
+            return
+        if decision.kind == "ai":
+            self.worker.submit_special("ai", {"text": decision.text})
             return
 
-        self.window.set_command(f"{parsed.label}  ({parsed.confidence:.2f})")
-
+        parsed = decision.command
         if parsed.command in ("exit_jarvis", "stop_listening", "go_standby"):
             self._handle_lifecycle(parsed.command)
+            return
+        if parsed.command in ("task_history", "self_diagnostics", "low_resource_mode"):
+            kind = {"task_history": "history", "self_diagnostics": "diagnostics",
+                    "low_resource_mode": "low_resource"}[parsed.command]
+            self.worker.submit_special(kind)
             return
         if parsed.is_ambiguous:
             self.speak(parsed.label)
@@ -779,6 +849,375 @@ class JarvisApp:
 # entry point
 # ---------------------------------------------------------------------------
 
+    # -- optional capabilities (Gemini, automation, planning) -------------
+
+    #: verbs that suggest a multi-step task rather than a single chat turn
+    PLANNER_HINTS = (
+        "open", "search", "find", "create", "make", "draft", "write", "send",
+        "book", "set", "change", "rename", "move", "copy", "delete", "install",
+        "update", "check", "plan", "research", "summar", "type", "click",
+        "scroll", "navigate", "launch", "run", "close", "minimize",
+    )
+
+    def _executable_path(self) -> str:
+        if getattr(sys, "frozen", False):
+            return sys.executable
+        return str(BASE_DIR / "main.py")
+
+    def _build_runtime(self) -> None:
+        """Build Gemini, desktop/browser/camera controllers, planner and history."""
+        data_dir = Path(str(self.config.get("user_data_dir") or (BASE_DIR / "data")))
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir = data_dir
+
+        # --- Gemini ------------------------------------------------------
+        gemini_cfg = dict(self.config.get("gemini") or {})
+        self.gemini_problem = ""
+        api_key = str(gemini_cfg.get("api_key") or "").strip() or extract_api_key()
+        self.gemini = None
+        self.live_session = None
+        if gemini_cfg.get("enabled") is False:
+            self.gemini_problem = "Gemini is switched off in the settings."
+        elif api_key and not looks_like_placeholder(api_key):
+            try:
+                self.gemini = GeminiClient(
+                    api_key=api_key,
+                    model=str(gemini_cfg.get("model") or DEFAULT_MODEL),
+                    temperature=float(gemini_cfg.get("temperature", 0.3)),
+                    timeout=float(gemini_cfg.get("timeout_seconds", 45.0)),
+                    max_retries=int(gemini_cfg.get("max_retries", 2)),
+                    history_path=data_dir / "conversation.json",
+                    system_prompt=str(gemini_cfg.get("system_prompt") or ""),
+                )
+            except GeminiError as exc:
+                self.gemini_problem = str(exc)
+        elif not api_key:
+            self.gemini_problem = "No Gemini API key found. Add one in Settings."
+        else:
+            self.gemini_problem = "The API key looks like a placeholder - add a real key in Settings."
+
+        # --- desktop, browser, camera -----------------------------------
+        desktop_cfg = dict(self.config.get("desktop") or {})
+        self.desktop = DesktopController(
+            allowed_roots=(
+                desktop_cfg.get("allowed_roots")
+                or (self.config.get("permissions") or {}).get("allowed_file_roots")
+                or []
+            ),
+            sensitive_paths=(self.config.get("permissions") or {}).get("sensitive_paths") or [],
+            screenshot_dir=Path(str(desktop_cfg.get("screenshot_dir") or (data_dir / "screenshots"))),
+            camera_enabled=bool(desktop_cfg.get("camera_enabled", False)),
+        )
+
+        browser_cfg = dict(self.config.get("browser") or {})
+        self.browser = None
+        if browser_cfg.get("enabled"):
+            try:
+                from browser import BrowserController
+
+                self.browser = BrowserController(
+                    headless=bool(browser_cfg.get("headless", False)),
+                    user_data_dir=browser_cfg.get("user_data_dir") or None,
+                )
+                self.browser.install_hint = self.browser.install_hint  # keep the helper
+            except Exception as exc:  # noqa: BLE001 - optional capability
+                log.warning("browser automation disabled: %s", exc)
+
+        camera_cfg = dict(self.config.get("camera") or {})
+        self.camera = None
+        if camera_cfg.get("enabled"):
+            try:
+                from camera import CameraController
+
+                self.camera = CameraController(
+                    enabled=True,
+                    save_dir=Path(str(camera_cfg.get("save_dir") or (data_dir / "photos"))),
+                    permission_granted=bool(camera_cfg.get("permission_granted", False)),
+                )
+            except Exception as exc:  # noqa: BLE001 - optional capability
+                log.warning("camera support disabled: %s", exc)
+
+        # --- tool registry, router, planner, runner ----------------------
+        tools_cfg = dict(self.config.get("tools") or {})
+        enabled_tools = [str(t) for t in (tools_cfg.get("enabled") or [])]
+        self.registry = ToolRegistry(
+            desktop=self.desktop,
+            browser=self.browser,
+            camera=self.camera,
+            permissions=self.permissions,
+            gemini=self.gemini,
+            local_executor=self._execute_local_command,
+            allowed_tools=enabled_tools or None,
+            confirm=self._confirm_tool,
+        )
+
+        wake_cfg = dict(self.config.get("wake_word") or {})
+        self.router = Router(
+            brain=self.brain,
+            ai_enabled=gemini_cfg.get("enabled", True) is not False,
+            ai_available=self.gemini is not None,
+            wake_words=["jarvis"] + [str(w) for w in (wake_cfg.get("additional") or [])],
+        )
+        self.history = TaskHistory(data_dir / "task_history.json")
+        self.planner = TaskPlanner(
+            ai_client=self.gemini,
+            allowed_tools=enabled_tools,
+            brain=self.brain,
+            router=self.router,
+        )
+        self.runner = TaskRunner(
+            planner=self.planner,
+            executor=self.registry.execute,
+            history=self.history,
+            on_step=self._on_step_progress,
+            on_done=self._on_task_done,
+        )
+        self.startup_manager = StartupManager(self._executable_path())
+        self.last_task = None
+
+    # -- tool confirmation -------------------------------------------------
+
+    def _drain_tool_confirmations(self) -> None:
+        """GUI thread: answer a pending tool confirmation dialog."""
+        while True:
+            try:
+                key, name, arguments = self.tool_confirmation_requests.get_nowait()
+            except queue.Empty:
+                break
+            wait = self.tool_confirmations.pop(key, None)
+            if wait is None:
+                continue
+            from PySide6.QtWidgets import QMessageBox
+
+            box = QMessageBox(self.window)
+            box.setWindowTitle("JARVIS confirmation")
+            box.setText(f"Allow JARVIS to use {name}?")
+            box.setInformativeText(
+                "This action was requested by the AI. Press Yes to allow it, "
+                "or No to cancel."
+            )
+            box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            box.setDefaultButton(QMessageBox.No)
+            answer = box.exec()
+            wait.accepted = answer == QMessageBox.Yes
+            wait.event.set()
+            self.window.append_log(f"Tool confirmation {name}: {'yes' if wait.accepted else 'no'}")
+
+    def _confirm_tool(self, name: str, arguments: Dict[str, object]) -> bool:
+        """Worker thread: ask the user before a sensitive tool runs."""
+        key = uuid.uuid4().hex
+        wait = _ConfirmationWait()
+        self.tool_confirmations[key] = wait
+        self.tool_confirmation_requests.put((key, name, arguments))
+        return bool(self.worker._wait(wait.event, 180.0) and wait.accepted)
+
+    def _execute_local_command(self, name: str, arguments: Dict[str, object]) -> Dict[str, object]:
+        """Run a ``local:<command>`` tool through the Phase 1 action engine."""
+        command_id = name[len(TOOL_PREFIX):] if name.startswith(TOOL_PREFIX) else name
+        parsed = ParsedCommand(
+            command=command_id,
+            raw=str(arguments.get("text") or ""),
+            normalized=str(arguments.get("text") or ""),
+            confidence=1.0,
+            slots=dict(arguments),
+        )
+        result = self.engine.execute(parsed)
+        return {"ok": result.success, "result": result.message}
+
+    # -- special job dispatch ----------------------------------------------
+
+    def _on_special(self, kind: str, payload: Dict[str, object]):
+        handlers = {
+            "ai": self._run_ai_turn,
+            "plan": self._run_planned_task,
+            "cancel": self._run_cancel,
+            "history": self._run_task_history,
+            "diagnostics": self._run_diagnostics,
+            "low_resource": self._run_low_resource,
+        }
+        handler = handlers.get(kind)
+        if handler is None:  # pragma: no cover - defensive
+            return None
+        try:
+            return handler(payload)
+        except Exception as exc:  # noqa: BLE001 - a failed job must not kill the worker
+            log.exception("special job '%s' failed", kind)
+            return ActionResult(
+                success=False, status="error",
+                message=f"I could not finish that: {exc}", command=kind,
+            )
+
+    # -- AI conversation ---------------------------------------------------
+
+    def _run_ai_turn(self, payload: Dict[str, object]) -> ActionResult:
+        text = str(payload.get("text") or "")
+        if not text.strip():
+            return ActionResult(success=False, status="error", message="Nothing to send.")
+        if self.gemini is None:
+            return ActionResult(
+                success=False, status="info",
+                message=self.gemini_problem or "Gemini is not configured.",
+                command="gemini",
+            )
+        outcome = self.gemini.run_agent(
+            text, self.registry.execute,
+            max_tool_rounds=int(payload.get("max_tool_rounds", 4)),
+        )
+        reply = str(outcome.get("reply", "")).strip()
+        calls = outcome.get("tool_calls") or []
+        if not reply:
+            reply = "I could not produce an answer - please try again."
+        if calls:
+            reply = f"{reply} (I used {len(calls)} tool call(s).)"
+        log.info("gemini reply (%d chars, %d tool calls)", len(reply), len(calls))
+        return ActionResult(success=True, status="info", message=reply, command="gemini")
+
+    # -- task planning -----------------------------------------------------
+
+    def _wants_planner(self, text: str) -> bool:
+        low = text.lower()
+        return any(hint in low for hint in self.PLANNER_HINTS)
+
+    def _run_planned_task(self, payload: Dict[str, object]) -> ActionResult:
+        goal = str(payload.get("text") or "")
+        if not goal.strip():
+            return ActionResult(success=False, status="error", message="Nothing to plan.")
+        if self.gemini is None:
+            return ActionResult(
+                success=False, status="info",
+                message="I need a Gemini API key before I can plan and run tasks.",
+                command="plan",
+            )
+        record = self.runner.run(goal, confirm=self._confirm_tool)
+        ok = record.status == "completed"
+        message = (
+            f"Task complete: {record.summary}"
+            if ok else
+            f"Task stopped: {record.summary or record.status}"
+        )
+        return ActionResult(
+            success=ok, status="info" if ok else "error",
+            message=message, command="plan", detail=record.id,
+        )
+
+    def _on_step_progress(self, step) -> None:
+        """Called from the worker thread: surface failures, stay quiet on success."""
+        if step.status == "done":
+            return
+        self.worker.results.put(
+            ActionResult(
+                success=False, status="info",
+                message=f"Step {step.index} ({step.text}) -> {step.status}: {step.result}",
+                command="plan",
+            )
+        )
+
+    def _on_task_done(self, record) -> None:
+        self.last_task = record
+
+    def _run_cancel(self, payload: Dict[str, object]) -> ActionResult:
+        cancelled = self.runner.cancel()
+        if cancelled:
+            return ActionResult(
+                success=True, status="info",
+                message="I cancelled the running task.", command="cancel",
+            )
+        return ActionResult(
+            success=False, status="info",
+            message="There is nothing running to cancel.", command="cancel",
+        )
+
+    def _run_task_history(self, payload: Dict[str, object]) -> ActionResult:
+        summary = self.history.format_summary(int(payload.get("limit", 10)))
+        return ActionResult(
+            success=True, status="info", message=summary or "No tasks recorded yet.",
+            command="task_history",
+        )
+
+    def _run_diagnostics(self, payload: Dict[str, object]) -> ActionResult:
+        report = run_diagnostics(
+            self.config,
+            voice=self.voice,
+            gemini=self.gemini,
+            browser=self.browser,
+            camera=self.camera,
+            registry=self.registry,
+            planner=self.planner,
+            history=self.history,
+            startup_manager=self.startup_manager,
+            engine=self.engine,
+            executable=bool(getattr(sys, "frozen", False)),
+            executable_path=self._executable_path(),
+            test_connection=bool(payload.get("test_connection", False)),
+        )
+        self.last_report = report
+        log.info("diagnostics\n%s", "\n".join(report.lines()))
+        return ActionResult(
+            success=report.ok, status="info" if report.ok else "error",
+            message=report.speakable(), command="self_diagnostics",
+            detail="\n".join(report.lines()),
+        )
+
+    # -- resource mode -----------------------------------------------------
+
+    def _run_low_resource(self, payload: Dict[str, object]) -> ActionResult:
+        current = bool((self.config.get("ui") or {}).get("low_resource", False))
+        enabled = not current
+        ui_cfg = dict(self.config.get("ui") or {})
+        ui_cfg["low_resource"] = enabled
+        self.config["ui"] = ui_cfg
+        self.set_low_resource(enabled)
+        return ActionResult(
+            success=True, status="info",
+            message="Low resource mode is on - the orb uses fewer particles."
+            if enabled else "Back to standard mode.",
+            command="low_resource_mode",
+        )
+
+    def set_low_resource(self, enabled: bool) -> None:
+        self.config.setdefault("ui", {})["low_resource"] = bool(enabled)
+        try:
+            self.window.set_low_resource(bool(enabled))
+        except Exception:  # pragma: no cover - GUI may not have the orb
+            log.debug("low resource mode not applied to the UI")
+
+    # -- UI actions (called from the GUI thread) --------------------------
+
+    def show_task_history(self) -> None:
+        self.window.show_task_history(self.history.format_summary(25))
+
+    def show_diagnostics(self, test_connection: bool = False) -> None:
+        report = run_diagnostics(
+            self.config,
+            voice=self.voice,
+            gemini=self.gemini,
+            browser=self.browser,
+            camera=self.camera,
+            registry=self.registry,
+            planner=self.planner,
+            history=self.history,
+            startup_manager=self.startup_manager,
+            engine=self.engine,
+            executable=bool(getattr(sys, "frozen", False)),
+            executable_path=self._executable_path(),
+            test_connection=test_connection,
+        )
+        self.last_report = report
+        self.window.show_diagnostics(report)
+
+    def maybe_first_run(self) -> None:
+        """Show the first-run wizard once, unless the user already finished it."""
+        if bool((self.config.get("ui") or {}).get("first_run_complete")):
+            return
+        try:
+            self.window.run_first_run_wizard(self)
+        except Exception:  # pragma: no cover - wizard must never block startup
+            log.warning("first-run wizard could not be shown", exc_info=True)
+
+    def toggle_startup(self, enabled: bool) -> bool:
+        return self.startup_manager.set_enabled(bool(enabled), self._executable_path())
+
+
 def run_check() -> int:
     """Print an environment report (used by `python main.py --check`)."""
     print("JARVIS environment check")
@@ -800,13 +1239,36 @@ def run_check() -> int:
         ("PIL", "screenshots"),
         ("pycaw", "system volume"),
         ("dotenv", ".env loading"),
+        ("google.genai", "Gemini SDK"),
+        ("playwright", "browser automation (optional)"),
+        ("cv2", "camera capture (optional)"),
+        ("pywinauto", "UI automation (optional)"),
+        ("winreg", "Windows startup setting"),
     ]
     for module, purpose in modules:
+        if module == "winreg" and sys.platform != "win32":
+            print(f"  [SKIP] {module:<20} {purpose}  (Windows only)")
+            continue
         try:
             __import__(module)
             print(f"  [OK]   {module:<20} {purpose}")
         except Exception as exc:
             print(f"  [MISS] {module:<20} {purpose}  ({exc})")
+
+    print()
+    api_key = extract_api_key()
+    if api_key:
+        print(f"  Gemini API key: found ({GeminiClient.mask_secret(api_key)})")
+    else:
+        print("  Gemini API key: none - set GEMINI_API_KEY or add it in Settings")
+
+    try:
+        from actions import ToolRegistry  # noqa: F401
+        from desktop import DesktopController  # noqa: F401
+
+        print(f"  Automation tools: {len(ToolRegistry(DesktopController()).names())} available")
+    except Exception as exc:
+        print(f"  Automation tools: unavailable ({exc})")
 
     print()
     mics = MicStream.list_devices()
@@ -831,11 +1293,35 @@ def load_dotenv_file() -> None:
         pass
 
 
+def run_diagnostics_cli() -> int:
+    """Print a full self-diagnostic report (``python main.py --diagnostics``)."""
+    try:
+        config = load_config()
+    except ConfigError as exc:
+        print(f"Could not load config: {exc}")
+        return 2
+
+    report = run_diagnostics(
+        config, executable=bool(getattr(sys, "frozen", False)),
+        executable_path=str(BASE_DIR / "main.py"),
+    )
+    for line in report.lines():
+        print("  " + line)
+    print()
+    print("  " + report.summary())
+    return 0 if report.ok else 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="jarvis", description="JARVIS voice assistant")
     parser.add_argument("--check", action="store_true", help="print environment report and exit")
     parser.add_argument("--config", default=None, help="path to config.json")
+    parser.add_argument("--diagnostics", action="store_true",
+                        help="run the full JARVIS self-diagnostic report")
     args = parser.parse_args(argv)
+
+    if args.diagnostics:
+        return run_diagnostics_cli()
 
     if args.check:
         return run_check()
@@ -866,6 +1352,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     jarvis = JarvisApp(config)
     jarvis.start()
+    jarvis.maybe_first_run()
     return app.exec()
 
 

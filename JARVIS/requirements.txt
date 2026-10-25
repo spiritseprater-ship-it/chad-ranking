@@ -1,40 +1,40 @@
-# JARVIS Phase 1 - Windows 11, Python 3.11 or 3.12 (64-bit)
-# Install with:  pip install -r requirements.txt
+# JARVIS - Windows 11, Python 3.11 or 3.12 (64-bit)
+#   pip install -r requirements.txt
+#
+# The list is split into "core" (needed for a working assistant) and
+# "optional" (adds capabilities; each one is loaded only when used).
+# Keep the optional section small - the packaged app must stay around 50-100 MB.
 
-# ---- Desktop UI -----------------------------------------------------------
-PySide6>=6.6.0,<7.0
-
-# ---- Audio capture / numerics --------------------------------------------
-sounddevice>=0.4.6
-numpy>=1.26,<3
-
-# ---- Wake word (100% local, no API key) -----------------------------------
-openwakeword>=0.6.0
-onnxruntime>=1.16.0 ; sys_platform == 'win32'
-onnxruntime>=1.16.0 ; sys_platform != 'win32'
-
-# ---- Speech recognition ---------------------------------------------------
-# Default cloud backend: Google Web Speech (free, no key, needs internet).
-SpeechRecognition>=3.10.0
-# Optional fully-local backends (pick one; both need a downloaded model).
-faster-whisper>=1.0.3
-vosk>=0.3.45
-
-# ---- Text to speech (offline SAPI5 on Windows) ----------------------------
-pyttsx3>=2.90
-# pywin32 is used implicitly by pyttsx3's SAPI5 driver on some installs.
+# ---- Core ------------------------------------------------------------------
+PySide6>=6.6.0,<7.0              # desktop UI and the particle orb
+sounddevice>=0.4.6               # microphone capture
+numpy>=1.26,<3                   # audio processing
+python-dotenv>=1.0.1             # .env loading
+google-genai>=1.0.0              # Gemini API (conversation, tools, Live API)
+requests>=2.31.0                 # speech API / fallbacks
+pyttsx3>=2.90                    # offline text to speech (SAPI5)
 pywin32>=306 ; sys_platform == 'win32'
 
-# ---- Windows automation ---------------------------------------------------
+# ---- Wake word (local, no API key) -----------------------------------------
+openwakeword>=0.7.0
+onnxruntime>=1.16.0
+
+# ---- Speech recognition (install at least one) -----------------------------
+SpeechRecognition>=3.10.0        # default cloud backend (free, no key)
+# faster-whisper>=1.0.3          # optional fully-local backend
+# vosk>=0.3.45                    # optional fully-local backend
+
+# ---- Desktop automation (Windows) ------------------------------------------
 pyautogui>=0.9.54
 Pillow>=10.0.0
 pycaw>=20240210
 comtypes>=1.4.1
+pywinauto>=0.6.8
 
-# ---- Misc -----------------------------------------------------------------
-python-dotenv>=1.0.1
-requests>=2.31.0
+# ---- Optional capabilities (enabled in Settings, never bundled by default) ---
+# playwright>=1.44.0             # browser automation + `playwright install chromium`
+# opencv-python>=4.8.0           # on-demand webcam photos
 
-# ---- Tests / packaging ----------------------------------------------------
+# ---- Tests and packaging ----------------------------------------------------
 pytest>=8.0.0
 pyinstaller>=6.3.0

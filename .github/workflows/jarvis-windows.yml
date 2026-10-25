@@ -166,30 +166,38 @@ jobs:
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
 
-      - name: Publish the build log into git
-        # Run logs and artifacts live on hosts this environment cannot reach,
-        # so a tag on the branch makes the log readable through the GitHub API.
+      - name: Publish the build log (stage)
         if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
           $log = "..\build-log.txt"
           if (-not (Test-Path $log)) { Write-Host "No build log to publish"; exit 0 }
-          $hash = (Get-FileHash $log -Algorithm SHA256).Hash
+          Write-Host "Build log exists: $((Get-Item $log).Length) bytes"
           git config user.email "ci@users.noreply.github.com"
           git config user.name "JARVIS CI"
           git add -f -A
-          if (-not (git diff --cached --quiet)) {
-              git commit -q -m "ci-build-log $hash"
+          git status --short
+
+      - name: Publish the build log (commit)
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "..\build-log.txt" -Algorithm SHA256).Hash
+          if (git diff --cached --quiet) {
+              Write-Host "Nothing staged - the log is already committed"
           } else {
-              Write-Host "The log file is already committed"
+              git commit -q -m "ci-build-log $hash"
           }
-          # Pushing to the branch is what makes the log readable; the jobs above
-          # skip commits whose message starts with 'ci-build-log', so this can
-          # never restart the build.
-          git push origin "refs/heads/arena/cc541324-chad-ranking" 2>&1 | Out-String | Write-Host
-          if ($LASTEXITCODE -ne 0) { Write-Warning "Could not push the build log to the branch" }
-          Write-Host "Published build log ($hash) on arena/cc541324-chad-ranking"
+          git log --oneline -1
+
+      - name: Publish the build log (push)
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          git push origin "refs/heads/arena/cc541324-chad-ranking"
 
       - name: Upload the build log
         if: always()

@@ -106,7 +106,26 @@ jobs:
 
       # Each phase runs as its own step: the failed step's name says which
       # stage broke, which matters because the run log itself is not reachable.
-      - name: Build phase 1 - Python check and venv
+      - name: Build phase 1 - Python version guard
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase preflight *>&1 |
+              Tee-Object -FilePath ..\build-log.txt
+          if ($LASTEXITCODE -ne 0) { throw "preflight failed with exit code $LASTEXITCODE" }
+
+      - name: Diag - venv inside the repo folder
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          if (Test-Path ".venv") { Write-Host ".venv already exists" } else {
+              python -m venv .venv
+              if ($LASTEXITCODE -ne 0) { Write-Host "venv in repo failed"; exit 1 }
+          }
+          Write-Host "venv in repo ok"
+
+      - name: Build phase 2 - create venv
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -114,7 +133,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt
           if ($LASTEXITCODE -ne 0) { throw "setup phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 2 - pip install requirements
+      - name: Build phase 3 - pip install requirements
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -122,7 +141,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "install phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 3 - test suite
+      - name: Build phase 4 - test suite
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -130,7 +149,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "test phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 4 - environment check
+      - name: Build phase 5 - environment check
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -138,7 +157,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "check phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 5 - PyInstaller
+      - name: Build phase 6 - PyInstaller
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -146,7 +165,7 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 6 - package the zip
+      - name: Build phase 7 - package the zip
         working-directory: JARVIS
         shell: pwsh
         run: |

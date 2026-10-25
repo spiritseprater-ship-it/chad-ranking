@@ -27,7 +27,7 @@ param(
     [switch]$SkipTests,
     # Run one stage at a time. CI calls these individually so a failure is
     # reported as the stage it happened in; the default runs everything.
-    [ValidateSet("all", "setup", "install", "test", "check", "build", "package")]
+    [ValidateSet("all", "preflight", "setup", "install", "test", "check", "build", "package")]
     [string]$Phase = "all",
     [string]$Python = "python",
     [string]$OutputDir = "dist"
@@ -61,6 +61,11 @@ try {
     }
 
     $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+
+    if ($Phase -eq "preflight") {
+        Pop-Location
+        return
+    }
 
     if ($Phase -in @("all", "setup")) {
         Write-Step "Creating a clean virtual environment (.venv)"

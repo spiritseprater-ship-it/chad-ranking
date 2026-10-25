@@ -142,26 +142,26 @@ try {
 
         # Convenience launcher: double-clicking opens the app from any location.
         $bat = @"
-    @echo off
-    title JARVIS
-    cd /d "%~dp0"
-    "%~dp0JARVIS.exe"
-    "@
+@echo off
+title JARVIS
+cd /d "%~dp0"
+"%~dp0JARVIS.exe"
+"@
         Set-Content -Path (Join-Path $ZipAppDir "launch.bat") -Value $bat -Encoding ASCII
 
         $topReadme = @"
-    JARVIS - Windows 11 desktop assistant
-    =====================================
+JARVIS - Windows 11 desktop assistant
+=====================================
 
-    1. Extract this zip anywhere (for example C:\Users\<name>\JARVIS).
-    2. Open the JARVIS folder and double-click JARVIS.exe (or launch.bat).
-    3. On first run you will be asked for a Gemini API key, or you can add it to
-       %LOCALAPPDATA%\JARVIS\.env as GEMINI_API_KEY=...
-    4. See JARVIS\README.txt for the full guide.
+1. Extract this zip anywhere (for example C:\Users\<name>\JARVIS).
+2. Open the JARVIS folder and double-click JARVIS.exe (or launch.bat).
+3. On first run you will be asked for a Gemini API key, or you can add it to
+   %LOCALAPPDATA%\JARVIS\.env as GEMINI_API_KEY=...
+4. See JARVIS\README.txt for the full guide.
 
-    Safety: press Ctrl+Alt+J at any time to stop JARVIS instantly. The key never
-    leaves your PC except to Google's Gemini endpoint.
-    "@
+Safety: press Ctrl+Alt+J at any time to stop JARVIS instantly. The key never
+leaves your PC except to Google's Gemini endpoint.
+"@
         Set-Content -Path (Join-Path $ReleaseDir "README.txt") -Value $topReadme -Encoding UTF8
 
         Write-Step "Packaging JARVIS-Windows.zip"

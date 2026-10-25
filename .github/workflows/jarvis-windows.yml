@@ -77,36 +77,10 @@ jobs:
           Write-Host "Arch     : $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
           python -c "import sys; print('Python  :', sys.version); print('Exe     :', sys.executable)"
 
-      # Version probes: each step passes only for one interpreter version, so
-      # the set of passing steps below names the runner's Python exactly.
-      - name: Diag - python is 3.11
-        if: always()
-        shell: pwsh
-        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 11) else 1)"
-
-      - name: Diag - python is 3.12
-        if: always()
-        shell: pwsh
-        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)"
-
-      - name: Diag - python is 3.13
-        if: always()
-        shell: pwsh
-        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 13) else 1)"
-
-      - name: Diag - venv creation works
-        if: always()
-        shell: pwsh
-        run: |
-          $tmp = Join-Path $env:TEMP "jarvis-venv-diag"
-          if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
-          python -m venv $tmp
-          if ($LASTEXITCODE -ne 0) { Write-Host "venv creation failed"; exit 1 }
-          & (Join-Path $tmp "Scripts\python.exe") -c "print('venv ok')"
-
       # Each phase runs as its own step: the failed step's name says which
       # stage broke, which matters because the run log itself is not reachable.
       - name: Build phase 1 - Python version guard
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -126,6 +100,7 @@ jobs:
           Write-Host "venv in repo ok"
 
       - name: Build phase 2 - create venv
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -134,6 +109,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "setup phase failed with exit code $LASTEXITCODE" }
 
       - name: Build phase 3 - pip install requirements
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -142,6 +118,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "install phase failed with exit code $LASTEXITCODE" }
 
       - name: Build phase 4 - test suite
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -150,6 +127,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "test phase failed with exit code $LASTEXITCODE" }
 
       - name: Build phase 5 - environment check
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -158,6 +136,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "check phase failed with exit code $LASTEXITCODE" }
 
       - name: Build phase 6 - PyInstaller
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
@@ -166,6 +145,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller phase failed with exit code $LASTEXITCODE" }
 
       - name: Build phase 7 - package the zip
+        if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |

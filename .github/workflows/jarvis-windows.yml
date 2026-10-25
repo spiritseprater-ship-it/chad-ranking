@@ -117,14 +117,93 @@ jobs:
               Tee-Object -FilePath ..\build-log.txt -Append
           if ($LASTEXITCODE -ne 0) { throw "install phase failed with exit code $LASTEXITCODE" }
 
-      - name: Build phase 4 - test suite
+      - name: Tests - Actions
         if: always()
         working-directory: JARVIS
         shell: pwsh
         run: |
-          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Python python -Phase test *>&1 |
-              Tee-Object -FilePath ..\build-log.txt -Append
-          if ($LASTEXITCODE -ne 0) { throw "test phase failed with exit code $LASTEXITCODE" }
+          & python -m pytest "tests/test_actions.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_actions.py failed" }
+
+      - name: Tests - Brain
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_brain.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_brain.py failed" }
+
+      - name: Tests - Browser
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_browser.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_browser.py failed" }
+
+      - name: Tests - Config and voice
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_config_and_voice.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_config_and_voice.py failed" }
+
+      - name: Tests - Desktop
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_desktop.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_desktop.py failed" }
+
+      - name: Tests - Gemini
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_gemini.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_gemini.py failed" }
+
+      - name: Tests - Integration
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_integration.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_integration.py failed" }
+
+      - name: Tests - Orb
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_orb.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_orb.py failed" }
+
+      - name: Tests - Paths
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_paths.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_paths.py failed" }
+
+      - name: Tests - Planner
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_planner.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_planner.py failed" }
+
+      - name: Tests - Router
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          & python -m pytest "tests/test_router.py" -q *>&1 | Tee-Object -FilePath ..\test-output.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "tests/test_router.py failed" }
 
       - name: Build phase 5 - environment check
         if: always()
@@ -232,6 +311,28 @@ jobs:
           Copy-Item ".\dist\JARVIS\JARVIS.exe" "..\artifacts\JARVIS.exe" -Force
           Copy-Item "..\build-report.txt" "..\artifacts\build-report.txt" -Force
           Copy-Item ".\SHA256SUMS.txt" "..\artifacts\SHA256SUMS.txt" -Force
+
+      - name: Annotate the failure with the log tail
+        if: failure()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          $log = "..\build-log.txt"
+          if (-not (Test-Path $log)) { Write-Host "No log to annotate"; exit 0 }
+          $tail = Get-Content $log -Tail 80 -ErrorAction SilentlyContinue
+          $msg = ($tail -join "`n")
+          if ($msg.Length -gt 8000) { $msg = $msg.Substring($msg.Length - 8000) }
+          $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $body = (@{ message = $msg; path = "build-log.txt"; level = "error" } | ConvertTo-Json -Compress)
+          try {
+              Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/annotations" -Method Post -Headers $headers -Body $body -ContentType "application/json" | Out-Null
+              Write-Host "Annotation posted"
+          } catch {
+              Write-Warning "Could not post an annotation: $($_.Exception.Message)"
+          }
 
       - name: Publish the build log (stage)
         if: always()

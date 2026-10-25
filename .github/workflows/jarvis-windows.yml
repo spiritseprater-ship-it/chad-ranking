@@ -80,18 +80,22 @@ jobs:
       # Version probes: each step passes only for one interpreter version, so
       # the set of passing steps below names the runner's Python exactly.
       - name: Diag - python is 3.11
+        if: always()
         shell: pwsh
         run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 11) else 1)"
 
       - name: Diag - python is 3.12
+        if: always()
         shell: pwsh
         run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)"
 
       - name: Diag - python is 3.13
+        if: always()
         shell: pwsh
         run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 13) else 1)"
 
       - name: Diag - venv creation works
+        if: always()
         shell: pwsh
         run: |
           $tmp = Join-Path $env:TEMP "jarvis-venv-diag"

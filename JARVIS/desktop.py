@@ -47,6 +47,16 @@ _SKIP_DIRS = {
 }
 
 
+def _normalise(path: object) -> str:
+    """Lower-case a path and force forward slashes.
+
+    Windows path comparisons must ignore both case and the separator, otherwise
+    every comparison silently misses: markers stored with backslashes never match
+    a normalised forward-slash path, and the reverse is true too.
+    """
+    return str(path).lower().replace("\\", "/").rstrip("/")
+
+
 # ---------------------------------------------------------------------------
 # file matching (pure, testable)
 # ---------------------------------------------------------------------------
@@ -244,7 +254,7 @@ class DesktopController:
         camera_enabled: bool = False,
     ) -> None:
         self.allowed_roots = [str(r) for r in (allowed_roots or [])]
-        self.sensitive_paths = [str(p).lower() for p in (sensitive_paths or [])]
+        self.sensitive_paths = [_normalise(p) for p in (sensitive_paths or [])]
         self.screenshot_dir = Path(screenshot_dir) if screenshot_dir else None
         self.camera_enabled = camera_enabled
         self.file_index: Optional[FileIndex] = None
@@ -284,12 +294,12 @@ class DesktopController:
         return self.file_index
 
     def is_sensitive_path(self, path: Path) -> bool:
-        low = str(path).lower().replace("\\", "/")
+        low = _normalise(path)
         return any(marker in low for marker in self.sensitive_paths)
 
     def is_inside_allowed_roots(self, path: Path) -> bool:
-        low = str(path).lower().replace("\\", "/")
-        return any(str(root).lower() in low for root in self.allowed_root_paths())
+        low = _normalise(path)
+        return any(_normalise(root) in low for root in self.allowed_root_paths())
 
     # -- mouse --------------------------------------------------------------
 

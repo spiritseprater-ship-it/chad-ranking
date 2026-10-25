@@ -407,6 +407,14 @@ jobs:
           if (Test-Path "build\JARVIS\PYZ-00.pyz") { Write-Host "PYZ present"; exit 0 }
           Write-Host "PYZ missing"; exit 1
 
+      - name: Diag - PyInstaller produced the intermediate bootloader
+        if: always()
+        working-directory: JARVIS
+        shell: pwsh
+        run: |
+          if (Test-Path "build\JARVIS\JARVIS.exe") { Write-Host "bootloader present"; exit 0 }
+          Write-Host "bootloader missing"; exit 1
+
       - name: Diag - PyInstaller produced the PKG
         if: always()
         working-directory: JARVIS
@@ -521,6 +529,106 @@ jobs:
           $log = ""
           if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
           if ($log -match "(?i)invalid") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+
+      - name: Diag - sig not a valid win32 application
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)not a valid win32 application") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig is not a valid
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)is not a valid") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig invalid image
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)invalid image") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig overlay
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)overlay") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig bootloader
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)bootloader") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig cannot find
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)cannot find") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig no such file
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)no such file") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig traceback
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)traceback") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig exception
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)exception") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig could not
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)could not") { Write-Host "matched"; exit 0 }
+          Write-Host "not present"; exit 1
+
+      - name: Diag - sig failed to
+        if: always()
+        shell: pwsh
+        run: |
+          $log = ""
+          if (Test-Path "build-log.txt") { $log = Get-Content "build-log.txt" -Raw }
+          if ($log -match "(?i)failed to") { Write-Host "matched"; exit 0 }
           Write-Host "not present"; exit 1
 
 
